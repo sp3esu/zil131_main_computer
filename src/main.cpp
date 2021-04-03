@@ -54,7 +54,7 @@ const float codeVersion = 6.63; // Software revision.
 
 // Libraries (you have to install all of them in the "Arduino sketchbook"/libraries folder)
 // !! Do NOT install the libraries in the sketch folder. This may cause weird rebooting issues !!
-// #include <statusLED.h> // https://github.com/TheDIYGuy999/statusLED <<------- Install the newest version!
+#include "statusLED.h" // https://github.com/TheDIYGuy999/statusLED <<------- Install the newest version!
 // #include <SBUS.h> // https://github.com/TheDIYGuy999/SBUS you need to install my fork of this library!
 // #include <rcTrigger.h> // https://github.com/TheDIYGuy999/rcTrigger <<------- v4.7: This one is now required as well
 // #include <IBusBM.h> // https://github.com/bmellink/IBusBM required for IBUS interface
@@ -145,7 +145,7 @@ const uint8_t PWM_PINS[PWM_CHANNELS_NUM] = { 13, 12, 14, 27, 35, 34 }; // Input 
 // statusLED cabLight(false);
 // statusLED brakeLight(false);
 // statusLED shakerMotor(false);
-// statusLED escOut(false);
+statusLED escOut(false);
 
 // rcTrigger objects -----
 // Analog or 3 position switches (short / long pressed time)
@@ -968,7 +968,7 @@ void setup() {
 
 //   shakerMotor.begin(SHAKER_MOTOR_PIN, 13, 20000); // Timer 13, 20kHz
 
-//   escOut.begin(ESC_OUT_PIN, 15, 50, 16); // Timer 15, 50Hz, 16bit <-- ESC running @ 50Hz
+  escOut.begin(ESC_OUT_PIN, 15, 50, 16); // Timer 15, 50Hz, 16bit <-- ESC running @ 50Hz
 
   // Serial setup
   Serial.begin(115200); // USB serial (for DEBUG)
@@ -2143,8 +2143,8 @@ void esc() {
       // Serial.println(pulse);
       Serial.print("escPulse: ");
       Serial.println(escPulse);
-      // Serial.println(escPulseMin);
-      // Serial.println(escPulseMax);
+      Serial.println(escPulseMin);
+      Serial.println(escPulseMax);
       // Serial.println(brakeRampRate);
       // Serial.println(currentRpm);
       // Serial.println(currentSpeed);
@@ -2273,12 +2273,24 @@ void esc() {
 
 
     // ESC control
-// #ifndef ESC_DIR
-//     escSignal = map(escPulseWidth, escPulseMin, escPulseMax, 3278, 6553); // 1 - 2ms (5 - 10% pulsewidth of 65534, not reversed)
-// #else
-//     escSignal = map(escPulseWidth, escPulseMax, escPulseMin, 3278, 6553); // 1 - 2ms (5 - 10% pulsewidth of 65534, reversed)
-// #endif
-    // escOut.pwm(escSignal);
+    #ifndef ESC_DIR
+        // Serial.print("pulsWidth ");
+        // Serial.println(escPulseWidth);
+        // Serial.print("pulsMin ");
+        // Serial.println(escPulseMin);
+        // Serial.print("pulsMax ");
+        // Serial.println(escPulseMax);
+
+        if (escPulseMin > 0 && escPulseMax > 0) {
+          escSignal = map(escPulseWidth, escPulseMin, escPulseMax, 3278, 6553); // 1 - 2ms (5 - 10% pulsewidth of 65534, not reversed)
+        } else {
+          Serial.println("NOOOOOOO!!!!!!!");
+        }
+    #else
+        escSignal = map(escPulseWidth, escPulseMax, escPulseMin, 3278, 6553); // 1 - 2ms (5 - 10% pulsewidth of 65534, reversed)
+    #endif
+    
+    escOut.pwm(escSignal);
 
 
     // Calculate a speed value from the pulsewidth signal (used as base for engine sound RPM while clutch is engaged)

@@ -7,7 +7,7 @@
 // US trucks --------
 // #include "vehicles/CaboverCAT3408.h" // Cabover truck with Caterpillar 3408 V8 Diesel
 // #include "vehicles/KenworthW900ADetroit8V71.h" // Kenworth W900A with Detroit 8V71 V8 2 stroke Diesel
-//#include "vehicles/KenworthW900ACAT3408.h" // Kenworth W900A with Caterpillar 3408 V8 Diesel
+// #include "vehicles/KenworthW900ACAT3408.h" // Kenworth W900A with Caterpillar 3408 V8 Diesel
 // #include "vehicles/KenworthW900ACAT3408new.h" // Kenworth W900A with Caterpillar 3408 V8 Diesel (good bass speaker required)
 // #include "vehicles/KenworthCummins335.h" // 1950ies Kenworth with Cummins 335 R6 Diesel
 // #include "vehicles/MackSuperLiner.h" // MACK Super Liner
@@ -22,7 +22,11 @@
 // #include "vehicles/ScaniaV8_50ton.h" // SCANIA V8 50 ton truck. Unknown model. Lots of bass, but a bit noisy
 //#include "vehicles/ScaniaV8.h" // SCANIA V8 truck, unknown model
 // #include "vehicles/1000HpScaniaV8.h" // 1000 HP SCANIA V8 truck with open pipes. Insane sound! Good bass speakers reqired
+
+// BEST ONE:
 #include "vehicles/Scania143.h" // SCANIA 143 V8 - the legend! The best sounding in my opinion
+// :BEST ONE
+
 // #include "vehicles/ScaniaV8Firetruck.h" // SCANIA V8 firetruck, automatic Allison 6 speed transmission with torque converter, "Martinshorn" siren
 // #include "vehicles/VolvoFH16_750.h" // Volvo FH16 750 truck. Inline 6, 750 horses, open pipes!
 // #include "vehicles/ManTgx.h" // MAN TGX 680 V8 truck
@@ -40,7 +44,7 @@
 // #include "vehicles/KirovetsK700.h" // Russian Kirovets K700 monster tractor. Extreme turbo sound!
 
 // US motorcycles --------
-//#include "vehicles/HarleyDavidsonFXSB.h" // Harley Davidson FXSB V2 motorcycle
+// #include "vehicles/HarleyDavidsonFXSB.h" // Harley Davidson FXSB V2 motorcycle
 
 // US cars --------
 //#include "vehicles/ChevyNovaCoupeV8.h" // 1975 Chevy Nova Coupe V8
