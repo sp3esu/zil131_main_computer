@@ -1645,6 +1645,8 @@ void processReverseLight() {
 }
 
 bool braking = false;
+#define TAIL_LIGHT_BRIGHTNES 30
+#define STOP_LIGHT_BRIGHTNES 80
 
 void processStopLight() {
   static unsigned long lastStopLightMilis = millis();
@@ -1670,10 +1672,10 @@ void processStopLight() {
   }
 
   if (braking) {
-    tailLight.pwm(80);
+    tailLight.pwm(STOP_LIGHT_BRIGHTNES);
   } else {
     if (headLightsOn) {
-      tailLight.pwm(40);
+      tailLight.pwm(TAIL_LIGHT_BRIGHTNES);
     } else {
       tailLight.off();
     }
