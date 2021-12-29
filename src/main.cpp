@@ -1610,25 +1610,19 @@ void checkButtons() {
     roofLightsOn = false;
 
   } else if (pulseWidth[6] > 1200 && pulseWidth[6] <= 1500) {
-    Serial.println("krotkie");
     headLight.pwm(80);
     roofLight.off();
-
     headLightsOn = true;
     roofLightsOn = false;
   } else if (pulseWidth[6] > 1500 && pulseWidth[6] <= 1700) {
     headLight.on();
     roofLight.off();
-    Serial.println("dlugie");
-
     headLightsOn = true;
     roofLightsOn = false;
   }
   else if (pulseWidth[6] > 1700) {
     headLight.on();
     roofLight.on();
-    Serial.println("dlugie i halogeny");
-
     headLightsOn = true;
     roofLightsOn = true;
   }
