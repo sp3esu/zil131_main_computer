@@ -75,7 +75,7 @@ boolean channelReversed[14] = {
   false, // CH2
   false, // CH3
   false, // CH4
-  true, // CH5
+  false, // CH5
   false, // CH6
   false, // CH7
   false, // CH8
@@ -91,10 +91,10 @@ boolean channelAutoZero[14] = {
   false, // CH0 (unused)
   true, // CH1
   false, // CH2
-  true, // CH3
-  false, // CH4
-  true, // CH5
-  true, // CH6
+  false, // CH3
+  true, // CH4
+  false, // CH5
+  false, // CH6
   false, // CH7
   false, // CH8
   false, // CH9
@@ -110,7 +110,7 @@ const uint16_t pulseSpan = 480;
 
 // Automatic or manual modes -----
 //#define AUTO_LIGHTS
-#define AUTO_ENGINE_ON_OFF
+// #define AUTO_ENGINE_ON_OFF
 //#define AUTO_INDICATORS
 
 #endif

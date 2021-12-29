@@ -36,8 +36,8 @@ const float codeVersion = 6.63; // Software revision.
 
 // DEBUG options can slow down the playback loop! Only uncomment them for debugging, may slow down your system!
 // #define CHANNEL_DEBUG // uncomment it for input signal debugging informations
-#define ESC_DEBUG // uncomment it to debug the ESC
-#define AUTO_TRANS_DEBUG // uncomment it to debug the automatic transmission
+// #define ESC_DEBUG // uncomment it to debug the ESC
+// #define AUTO_TRANS_DEBUG // uncomment it to debug the automatic transmission
 //#define MANUAL_TRANS_DEBUG // uncomment it to debug the manual transmission
 //#define TRACKED_DEBUG // debugging tracked vehicle mode
 
@@ -132,45 +132,27 @@ const uint8_t PWM_PINS[PWM_CHANNELS_NUM] = { 13, 12, 14, 27, 35, 34 }; // Input 
 
 // Objects *************************************************************************************
 // Status LED objects (also used for PWM shaker motor and ESC control) -----
-// statusLED headLight(false); // "false" = output not inversed
-// statusLED tailLight(false);
+statusLED escOut(false);
+
+// Status LED objects (also used for PWM shaker motor and ESC control) -----
+statusLED headLight(false); // "false" = output not inversed
+statusLED tailLight(false);
 // statusLED indicatorL(false);
 // statusLED indicatorR(false);
 // statusLED fogLight(false);
-// statusLED reversingLight(false);
-// statusLED roofLight(false);
+statusLED reversingLight(false);
+statusLED roofLight(false);
 // statusLED sideLight(false);
 // statusLED beaconLight1(false);
 // statusLED beaconLight2(false);
+// statusLED shakerMotor(false);
 // statusLED cabLight(false);
 // statusLED brakeLight(false);
-// statusLED shakerMotor(false);
-statusLED escOut(false);
 
-// rcTrigger objects -----
-// Analog or 3 position switches (short / long pressed time)
-// rcTrigger functionR100u(200); // 200ms required!
-// rcTrigger functionR100d(100);
-// rcTrigger functionR75u(300); // 300ms required!
-// rcTrigger functionR75d(300); // 300ms required!
-// rcTrigger functionL100l(100);
-// rcTrigger functionL100r(100);
-// rcTrigger functionL75l(300); // 300ms required!
-// rcTrigger functionL75r(300); // 300ms required!
-
-// // Latching 2 position
-// rcTrigger mode1Trigger(100);
-// rcTrigger mode2Trigger(100);
-
-// // momentary buttons
-// rcTrigger momentary1Trigger(100);
-
-// // Flags
-// rcTrigger hazardsTrigger(100);
-// rcTrigger indicatorLTrigger(100);
-// rcTrigger indicatorRTrigger(100);
 
 // Global variables **********************************************************************
+SemaphoreHandle_t xPwmSemaphore;
+
 
 // PWM processing variables
 #define RMT_TICK_PER_US 1
@@ -192,20 +174,6 @@ volatile boolean ready = false;
 volatile unsigned long timelast;
 unsigned long timelastloop;
 uint32_t maxPpmRpmPercentage = 390; // Limit required to prevent controller fron crashing @ high engine RPM
-
-// // SBUS signal processing variables
-// SBUS sBus(Serial2); // SBUS object on Serial 2 port
-// // channel, fail safe, and lost frames data
-// uint16_t SBUSchannels[16];
-// bool SBUSfailSafe;
-// bool SBUSlostFrame;
-// bool sbusInit;
-// uint32_t maxSbusRpmPercentage = 390; // Limit required to prevent controller fron crashing @ high engine RPM
-
-// // IBUS signal processing variables
-// IBusBM iBus;    // IBUS object
-// bool ibusInit;
-// uint32_t maxIbusRpmPercentage = 350; // Limit required to prevent controller fron crashing @ high engine RPM
 
 // Interrupt latches
 volatile boolean couplerSwitchInteruptLatch; // this is enabled, if the coupler switch pin change interrupt is detected
@@ -310,16 +278,6 @@ int16_t escPulseMin;
 int16_t escPulseMaxNeutral;
 int16_t escPulseMinNeutral;
 uint16_t currentSpeed = 0;                               // 0 - 500 (current ESC power)
-
-// Lights
-// int8_t lightsState = 0;                                  // for lights state machine
-// volatile boolean lightsOn = false;                       // Lights on
-// volatile boolean headLightsFlasherOn = false;            // Headlights flasher impulse (Lichthupe)
-// volatile boolean headLightsHighBeamOn = false;           // Headlights high beam (Fernlicht)
-// volatile boolean blueLightTrigger = false;               // Bluelight on 8Blaulicht)
-// boolean indicatorLon = false;                            // Left indicator (Blinker links)
-// boolean indicatorRon = false;                            // Right indicator 8Blinker rechts)
-// boolean cannonFlash = false;                             // Flashing cannon fire
 
 // Our main tasks
 TaskHandle_t Task1;
@@ -847,49 +805,6 @@ static void IRAM_ATTR rmt_isr_handler(void* arg) {
   }
 }
 
-//
-// =======================================================================================================
-// PPM SIGNAL READ INTERRUPT
-// =======================================================================================================
-//
-
-// void IRAM_ATTR readPpm() {
-//   unsigned long timenew = micros();
-//   unsigned long timediff = timenew - timelast;
-//   timelast = timenew;
-
-//   if (timediff > 2500) {  // Synch gap detected:
-//     ppmInp[NUM_OF_PPM_CHL] = ppmInp[NUM_OF_PPM_CHL] + timediff; // add time
-//     counter = 0;
-//     if (average == NUM_OF_PPM_AVG) {
-//       for (int i = 0; i < NUM_OF_PPM_CHL + 1; i++) {
-//         ppmBuf[i] = ppmInp[i] / average;
-//         ppmInp[i] = 0;
-//       }
-//       average = 0;
-//       ready = true;
-//     }
-//     average++;
-//   }
-//   else {
-//     if (counter < NUM_OF_PPM_CHL) {
-//       ppmInp[counter] = ppmInp[counter] + timediff;
-//       counter++;
-//     }
-//   }
-// }
-
-//
-// =======================================================================================================
-// TRAILER PRESENCE SWITCH INTERRUPT
-// =======================================================================================================
-//
-// #if not defined THIRD_BRAKLELIGHT
-// void trailerPresenceSwitchInterrupt() {
-//   couplerSwitchInteruptLatch = true;
-// }
-// #endif
-//
 // =======================================================================================================
 // mcpwm SETUP (1x during startup)
 // =======================================================================================================
@@ -922,17 +837,25 @@ void setupMcpwm() {
 //
 
 void Task1code(void *pvParameters);
-// void readPpmCommands();
 void readPwmSignals();
 void processRawChannels();
 void failsafeRcSignals();
 
 
 void setup() {
-
   // Watchdog timers need to be disabled, if task 1 is running without delay(1)
   disableCore0WDT();
   disableCore1WDT();
+
+  // Semaphores are useful to stop a Task proceeding, where it should be paused to wait,
+  // because it is sharing a resource, such as the PWM variable.
+  // Semaphores should only be used whilst the scheduler is running, but we can set it up here.
+  if ( xPwmSemaphore == NULL )  // Check to confirm that the PWM Semaphore has not already been created.
+  {
+    xPwmSemaphore = xSemaphoreCreateMutex();  // Create a mutex semaphore we will use to manage variable access
+    if ( ( xPwmSemaphore ) != NULL )
+      xSemaphoreGive( ( xPwmSemaphore ) );  // Make the PWM variable available for use, by "Giving" the Semaphore.
+  }
 
   // Set pin modes
   for (uint8_t i = 0; i < PWM_CHANNELS_NUM; i++) {
@@ -940,56 +863,22 @@ void setup() {
   }
 
   pinMode(PPM_PIN, INPUT_PULLDOWN);
-
   pinMode(COMMAND_RX, INPUT_PULLDOWN);
 
-
-// #if not defined THIRD_BRAKLELIGHT // If a third brakelight is not defined, pin 32 for the trailer presence switch
-//   pinMode(COUPLER_SWITCH_PIN, INPUT_PULLUP);
-//   attachInterrupt(digitalPinToInterrupt(COUPLER_SWITCH_PIN), trailerPresenceSwitchInterrupt, CHANGE);
-// #endif
-
   // LED & shaker motor setup (note, that we only have timers from 0 - 15)
-//   headLight.begin(HEADLIGHT_PIN, 1, 20000); // Timer 1, 20kHz
-//   tailLight.begin(TAILLIGHT_PIN, 2, 20000); // Timer 2, 20kHz
-//   indicatorL.begin(INDICATOR_LEFT_PIN, 3, 20000); // Timer 3, 20kHz
-//   indicatorR.begin(INDICATOR_RIGHT_PIN, 4, 20000); // Timer 4, 20kHz
-//   fogLight.begin(FOGLIGHT_PIN, 5, 20000); // Timer 5, 20kHz
-//   reversingLight.begin(REVERSING_LIGHT_PIN, 6, 20000); // Timer 6, 20kHz
-//   roofLight.begin(ROOFLIGHT_PIN, 7, 20000); // Timer 7, 20kHz
-//   sideLight.begin(SIDELIGHT_PIN, 8, 20000); // Timer 8, 20kHz
-
-//   beaconLight1.begin(BEACON_LIGHT1_PIN, 9, 20000); // Timer 9, 20kHz
-//   beaconLight2.begin(BEACON_LIGHT2_PIN, 10, 20000); // Timer 10, 20kHz
-// #if defined THIRD_BRAKLELIGHT
-//   brakeLight.begin(BRAKELIGHT_PIN, 11, 20000); // Timer 11, 20kHz
-// // #endif
-//   cabLight.begin(CABLIGHT_PIN, 12, 20000); // Timer 12, 20kHz
-
-//   shakerMotor.begin(SHAKER_MOTOR_PIN, 13, 20000); // Timer 13, 20kHz
+  headLight.begin(HEADLIGHT_PIN, 1, 20000); // Timer 1, 20kHz
+  tailLight.begin(TAILLIGHT_PIN, 2, 20000); // Timer 2, 20kHz
+  // indicatorL.begin(INDICATOR_LEFT_PIN, 3, 20000); // Timer 3, 20kHz
+  // indicatorR.begin(INDICATOR_RIGHT_PIN, 4, 20000); // Timer 4, 20kHz
+  // fogLight.begin(FOGLIGHT_PIN, 5, 20000); // Timer 5, 20kHz
+  reversingLight.begin(REVERSING_LIGHT_PIN, 6, 20000); // Timer 6, 20kHz
+  roofLight.begin(ROOFLIGHT_PIN, 7, 20000); // Timer 7, 20kHz
 
   escOut.begin(ESC_OUT_PIN, 15, 50, 16); // Timer 15, 50Hz, 16bit <-- ESC running @ 50Hz
 
   // Serial setup
   Serial.begin(115200); // USB serial (for DEBUG)
 
-  // Communication setup --------------------------------------------
-// #if defined SBUS_COMMUNICATION // SBUS ----
-//   if (MAX_RPM_PERCENTAGE > maxSbusRpmPercentage) MAX_RPM_PERCENTAGE = maxSbusRpmPercentage; // Limit RPM range
-//   sBus.begin(COMMAND_RX, COMMAND_TX, sbusInverted); // begin SBUS communication with compatible receivers
-//   setupMcpwm(); // mcpwm servo output setup
-
-// #elif defined IBUS_COMMUNICATION // IBUS ----
-//   if (MAX_RPM_PERCENTAGE > maxIbusRpmPercentage) MAX_RPM_PERCENTAGE = maxIbusRpmPercentage; // Limit RPM range
-//   iBus.begin(Serial2, IBUSBM_NOTIMER, COMMAND_RX, COMMAND_TX); // begin IBUS communication with compatible receivers
-//   setupMcpwm(); // mcpwm servo output setup
-
-// #elif defined PPM_COMMUNICATION // PPM ----
-//   if (MAX_RPM_PERCENTAGE > maxPpmRpmPercentage) MAX_RPM_PERCENTAGE = maxPpmRpmPercentage; // Limit RPM range
-//   attachInterrupt(digitalPinToInterrupt(PPM_PIN), readPpm, RISING); // begin PPM communication with compatible receivers
-//   setupMcpwm(); // mcpwm servo output setup
-
-// #else
   // PWM ----
   if (MAX_RPM_PERCENTAGE > maxPwmRpmPercentage) MAX_RPM_PERCENTAGE = maxPwmRpmPercentage; // Limit RPM range
   // New: PWM read setup, using rmt. Thanks to croky-b
@@ -1013,7 +902,7 @@ void setup() {
 
   rmt_isr_register(rmt_isr_handler, NULL, 0, NULL); // This is our interrupt
 
-// #endif // -----------------------------------------------------------
+  // -----------------------------------------------------------
 
   // Refresh sample intervals (important, because MAX_RPM_PERCENTAGE was probably changed above)
   maxSampleInterval = 4000000 / sampleRate;
@@ -1023,7 +912,6 @@ void setup() {
   timelast = micros();
   timelastloop = timelast;
 
-  
 
   // Task 1 setup (running on core 0)
   TaskHandle_t Task1;
@@ -1050,27 +938,10 @@ void setup() {
   timerAlarmEnable(fixedTimer); // enable
 
   // wait for RC receiver to initialize
-  while (millis() <= 3000);
+  while (millis() <= 1000);
 
-  // Read RC signals for the first time (used for offset calculations)
-// #if defined SBUS_COMMUNICATION
-//   Serial.println("Initializing SBUS...");
-//   while (!sbusInit) {
-//     readSbusCommands(); // SBUS communication (pin 36)
-//   }
-//   Serial.println("done!");
-// #elif defined IBUS_COMMUNICATION
-//   Serial.println("Initializing IBUS...");
-//   while (!ibusInit) {
-//     readIbusCommands(); // IBUS communication (pin 36)
-//   }
-//   Serial.println("done!");
-// #elif defined PPM_COMMUNICATION
-//   readPpmCommands();
-// #else
-  // measure PWM RC signals mark space ratio
   readPwmSignals();
-// #endif
+
 
   // Calculate RC input signal ranges for all channels
   for (uint8_t i = 1; i < PULSE_ARRAY_SIZE; i++) {
@@ -1137,162 +1008,42 @@ void readPwmSignals() {
 
 //
 // =======================================================================================================
-// READ PPM MULTI CHANNEL COMMMANDS (change the channel order in "remoteSetup.h", if needed)
-// =======================================================================================================
-//
-
-// void readPpmCommands() {
-
-//   // NOTE: 8 channels is the maximum of this protocol!
-
-//   // pulseWidthRaw[1] = ppmBuf[STEERING - 1]; // CH1 steering
-//   // pulseWidthRaw[2] = ppmBuf[GEARBOX - 1]; // CH2 3 position switch for gearbox (left throttle in tracked mode)
-//   pulseWidthRaw[3] = ppmBuf[THROTTLE - 1]; // CH3 throttle & brake
-//   // pulseWidthRaw[4] = ppmBuf[HORN - 1]; // CH5 jake brake, high / low beam, headlight flasher, engine on / off
-//   // pulseWidthRaw[5] = ppmBuf[FUNCTION_R - 1]; // CH5 jake brake, high / low beam, headlight flasher, engine on / off
-//   // pulseWidthRaw[6] = ppmBuf[FUNCTION_L - 1]; // CH6 indicators, hazards
-//   // pulseWidthRaw[7] = ppmBuf[POT2 - 1]; // CH7 pot 2
-//   // pulseWidthRaw[8] = ppmBuf[MODE1 - 1]; // CH8 mode 1 switch
-
-//   // Normalize, auto zero and reverse channels
-//   processRawChannels();
-
-//   // Failsafe for RC signals
-//   failSafe = (pulseWidthRaw[3] < 500 || pulseWidthRaw[3] > 2500);
-//   failsafeRcSignals();
-// }
-
-//
-// =======================================================================================================
-// READ SBUS SIGNALS (change the channel order in "remoteSetup.h", if needed)
-// =======================================================================================================
-//
-
-// void readSbusCommands() {
-//   // Signals are coming in via SBUS protocol
-
-//   static unsigned long lastSbusFailsafe;
-
-//   // look for a good SBUS packet from the receiver
-//   if (sBus.read(&SBUSchannels[0], &SBUSfailSafe, &SBUSlostFrame)) {
-//     sbusInit = true;
-//     lastSbusFailsafe = millis();
-//   }
-
-//   // Proportional channels (in Microseconds)
-//   pulseWidthRaw[1] = map(SBUSchannels[STEERING - 1], 172, 1811, 1000, 2000); // CH1 steering
-//   pulseWidthRaw[2] = map(SBUSchannels[GEARBOX - 1], 172, 1811, 1000, 2000); // CH2 3 position switch for gearbox (left throttle in tracked mode)
-//   pulseWidthRaw[3] = map(SBUSchannels[THROTTLE - 1], 172, 1811, 1000, 2000); // CH3 throttle & brake
-//   pulseWidthRaw[4] = map(SBUSchannels[HORN - 1], 172, 1811, 1000, 2000); // CH5 jake brake, high / low beam, headlight flasher, engine on / off
-//   pulseWidthRaw[5] = map(SBUSchannels[FUNCTION_R - 1], 172, 1811, 1000, 2000); // CH5 jake brake, high / low beam, headlight flasher, engine on / off
-//   pulseWidthRaw[6] = map(SBUSchannels[FUNCTION_L - 1], 172, 1811, 1000, 2000); // CH6 indicators, hazards
-//   pulseWidthRaw[7] = map(SBUSchannels[POT2 - 1], 172, 1811, 1000, 2000); // CH7 pot 2
-//   pulseWidthRaw[8] = map(SBUSchannels[MODE1 - 1], 172, 1811, 1000, 2000); // CH8 mode 1 switch
-//   pulseWidthRaw[9] = map(SBUSchannels[MODE2 - 1], 172, 1811, 1000, 2000); // CH9 mode 2 switch
-//   pulseWidthRaw[10] = map(SBUSchannels[MOMENTARY1 - 1], 172, 1811, 1000, 2000); // CH10
-//   pulseWidthRaw[11] = map(SBUSchannels[HAZARDS - 1], 172, 1811, 1000, 2000); // CH11
-//   pulseWidthRaw[12] = map(SBUSchannels[INDICATOR_LEFT - 1], 172, 1811, 1000, 2000); // CH12
-//   pulseWidthRaw[13] = map(SBUSchannels[INDICATOR_RIGHT - 1], 172, 1811, 1000, 2000); // CH13
-
-//   // Failsafe triggering (works, if SBUS wire is unplugged, but SBUSfailSafe signal from the receiver is untested!)
-//   if (millis() - lastSbusFailsafe > 50 && !SBUSfailSafe  && !SBUSlostFrame) {
-//     failSafe = true; // if timeout (signal loss)
-//     //Serial.println("SBUS failsafe");
-//   }
-//   else failSafe = false;
-
-//   // Normalize, auto zero and reverse channels
-//   processRawChannels();
-
-//   // Failsafe for RC signals
-//   failsafeRcSignals();
-// }
-
-//
-// =======================================================================================================
-// READ IBUS SIGNALS (change the channel order in "remoteSetup.h", if needed).
-// =======================================================================================================
-//
-
-// NOTE: "MAX_RPM_PERCENTAGE" > 350 will crash the ESP32, if used in iBus mode!
-// Caution, this protocoll does NOT offer failsafe!! Bad contact on iBUS wire = crash!
-// Better use SBUS instead, if available!
-
-// IBUS Loop sub function ----
-// void loopIbus() {
-//   // Loop iBus (read signals)
-//   static unsigned long lastIbusRead;
-//   static uint16_t iBusReadCycles;
-//   if (millis() - lastIbusRead > 10) { // Every 10ms
-//     lastIbusRead = millis();
-//     iBus.loop();
-//     if (iBusReadCycles < 100) iBusReadCycles ++; else ibusInit = true; // We need to process the entire serial package, before we read the channels for the first time! 100 OK? TODO
-//   }
-// }
-
-// Read IBUS signals ----
-// void readIbusCommands() {
-
-//   // Loop iBus (fill buffer)
-//   loopIbus();
-
-//   // NOTE: The channel mapping is in the order as defined in "channelsetup.h"
-//   // for example: sound controller channel 2 (GEARBOX) connects to receiver channel 6
-
-//   // Proportional channels (in Microseconds)
-//   pulseWidthRaw[1] = iBus.readChannel(STEERING - 1); // CH1 steering
-//   pulseWidthRaw[2] = iBus.readChannel(GEARBOX - 1); // CH2 3 position switch for gearbox (left throttle in tracked mode)
-//   pulseWidthRaw[3] = iBus.readChannel(THROTTLE - 1); // CH3 throttle & brake
-//   pulseWidthRaw[4] = iBus.readChannel(HORN - 1); // CH5 jake brake, high / low beam, headlight flasher, engine on / off
-//   pulseWidthRaw[5] = iBus.readChannel(FUNCTION_R - 1); // CH5 jake brake, high / low beam, headlight flasher, engine on / off
-//   pulseWidthRaw[6] = iBus.readChannel(FUNCTION_L - 1); // CH6 indicators, hazards
-//   pulseWidthRaw[7] = iBus.readChannel(POT2 - 1); // CH7 pot 2
-//   pulseWidthRaw[8] = iBus.readChannel(MODE1 - 1); // CH8 mode 1 switch
-//   pulseWidthRaw[9] = iBus.readChannel(MODE2 - 1); // CH9 mode 2 switch
-//   pulseWidthRaw[10] = iBus.readChannel(MOMENTARY1 - 1); // CH10
-//   pulseWidthRaw[11] = iBus.readChannel(HAZARDS - 1); // CH11
-//   pulseWidthRaw[12] = iBus.readChannel(INDICATOR_LEFT - 1); // CH12
-//   pulseWidthRaw[13] = iBus.readChannel(INDICATOR_RIGHT - 1); // CH13
-
-//   // Normalize, auto zero and reverse channels
-//   processRawChannels();
-// }
-
-//
-// =======================================================================================================
 // PROZESS CHANNELS (Normalize, auto zero and reverse)
 // =======================================================================================================
 //
 
 void processRawChannels() {
 
-#ifdef TRACKED_MODE // If tracked mode: enable CH2 auto zero adjustment as well, if it is enabled for CH3
-  if (channelAutoZero[3]) channelAutoZero[2] = true;
-#endif
+  if (xSemaphoreTake( xPwmSemaphore, portMAX_DELAY )) {
+    for (int i = 1; i < PULSE_ARRAY_SIZE; i++) {
 
-  for (int i = 1; i < PULSE_ARRAY_SIZE; i++) {
+      // Take channel raw data, reverse them, if required and store them
+      if (channelReversed[i]) pulseWidth[i] = map(pulseWidthRaw[i], 0, 3000, 3000, 0); // Reversed
+      else pulseWidth[i] = pulseWidthRaw[i]; // Not reversed
 
-    // Take channel raw data, reverse them, if required and store them
-    if (channelReversed[i]) pulseWidth[i] = map(pulseWidthRaw[i], 0, 3000, 3000, 0); // Reversed
-    else pulseWidth[i] = pulseWidthRaw[i]; // Not reversed
+      // Auto zero offset adjustment (only within certain absolute range)
+      if (channelAutoZero[i] && !autoZeroDone && pulseWidth[i] > pulseMinValid && pulseWidth[i] < pulseMaxValid) pulseOffset[i] = 1500 - pulseWidth[i];
 
-    // Auto zero offset adjustment (only within certain absolute range)
-    if (channelAutoZero[i] && !autoZeroDone && pulseWidth[i] > pulseMinValid && pulseWidth[i] < pulseMaxValid) pulseOffset[i] = 1500 - pulseWidth[i];
+      // Compensate pulsewidth with auto zero offset
+      pulseWidth[i] += pulseOffset[i];
+      if (!autoZeroDone) { // Print offsets, if switching on the controller
+        Serial.println(i);
+        Serial.println(pulseOffset[i]);
+      }
 
-    // Compensate pulsewidth with auto zero offset
-    pulseWidth[i] += pulseOffset[i];
-    if (!autoZeroDone) { // Print offsets, if switching on the controller
-      Serial.println(i);
-      Serial.println(pulseOffset[i]);
+      // Set auto zero done flag
+      if (i == PULSE_ARRAY_SIZE - 1) autoZeroDone = true;
+      xSemaphoreGive( xPwmSemaphore );
     }
-
-    // Set auto zero done flag
-    if (i == PULSE_ARRAY_SIZE - 1) autoZeroDone = true;
+  }
+  else {
+    xSemaphoreGive( xPwmSemaphore ); // Free or "Give" the semaphore for others, if not required!
   }
 
   // Print input signal debug infos
-  static unsigned long printChannelMillis;
+
 #ifdef CHANNEL_DEBUG // can slow down the playback loop!
+  static unsigned long printChannelMillis;
   if (millis() - printChannelMillis > 1000) { // Every 1000ms
     printChannelMillis = millis();
 
@@ -1345,43 +1096,6 @@ void failsafeRcSignals() {
 
 //
 // =======================================================================================================
-// MCPWM SERVO RC SIGNAL OUTPUT (bus communication mode only)
-// =======================================================================================================
-//
-// See: https://docs.espressif.com/projects/esp-idf/en/latest/esp32/api-reference/peripherals/mcpwm.html#configure
-
-// void mcpwmOutput() {
-
-//   // Steering CH1
-//   uint16_t steeringServoMicros;
-//   if (pulseWidth[1] < 1500) steeringServoMicros = map(pulseWidth[1], 1000, 1500, CH1L, CH1C);
-//   else if (pulseWidth[1] > 1500) steeringServoMicros = map(pulseWidth[1], 1500, 2000, CH1C, CH1R);
-//   else steeringServoMicros = CH1C;
-//   mcpwm_set_duty_in_us(MCPWM_UNIT_0, MCPWM_TIMER_0, MCPWM_OPR_A, steeringServoMicros);
-
-//   // Shifting CH2
-//   static uint16_t shiftingServoMicros;
-// #if not defined MODE1_SHIFTING
-//   if (selectedGear == 1) shiftingServoMicros = CH2L;
-//   if (selectedGear == 2) shiftingServoMicros = CH2C;
-//   if (selectedGear == 3) shiftingServoMicros = CH2R;
-// #else
-//   if (currentSpeed > 100 && currentSpeed < 150) { // Only shift WPL gearbox, if vehicle is moving slowly, so it's engaging properly
-//     if (!mode1) shiftingServoMicros = CH2L;
-//     else shiftingServoMicros = CH2C;
-//   }
-// #endif
-//   mcpwm_set_duty_in_us(MCPWM_UNIT_0, MCPWM_TIMER_0, MCPWM_OPR_B, shiftingServoMicros);
-
-//   // Trailer coupler (5th wheel) CH4
-//   static uint16_t couplerServoMicros;
-//   if (unlock5thWheel) couplerServoMicros = CH4R;
-//   else couplerServoMicros = CH4L;
-//   mcpwm_set_duty_in_us(MCPWM_UNIT_1, MCPWM_TIMER_1, MCPWM_OPR_A, couplerServoMicros);
-// }
-
-//
-// =======================================================================================================
 // MAP PULSEWIDTH TO THROTTLE CH3
 // =======================================================================================================
 //
@@ -1389,46 +1103,6 @@ void failsafeRcSignals() {
 void mapThrottle() {
 
   // Input is around 1000 - 2000us, output 0-500 for forward and backwards
-
-#if defined TRACKED_MODE // Dual throttle input for caterpillar vehicles ------------------
-  int16_t currentThrottleLR[4]; // 2 & 3 is used, so required array size = 4!
-
-  // check if pulsewidths 2 + 3 look like servo pulses
-  for (int i = 2; i < 4; i++) {
-    if (pulseWidth[i] > pulseMinLimit[i] && pulseWidth[i] < pulseMaxLimit[i]) {
-      if (pulseWidth[i] < pulseMin[i]) pulseWidth[i] = pulseMin[i]; // Constrain the value
-      if (pulseWidth[i] > pulseMax[i]) pulseWidth[i] = pulseMax[i];
-
-      // calculate a throttle value from the pulsewidth signal
-      if (pulseWidth[i] > pulseMaxNeutral[i]) {
-        currentThrottleLR[i] = map(pulseWidth[i], pulseMaxNeutral[i], pulseMax[i], 0, 500);
-      }
-      else if (pulseWidth[i] < pulseMinNeutral[i]) {
-        currentThrottleLR[i] = map(pulseWidth[i], pulseMinNeutral[i], pulseMin[i], 0, 500);
-      }
-      else {
-        currentThrottleLR[i] = 0;
-      }
-    }
-  }
-
-  // Mixing both sides together (take the bigger value)
-  currentThrottle = max(currentThrottleLR[2], currentThrottleLR[3]);
-
-  // Print debug infos
-  static unsigned long printTrackedMillis;
-#ifdef TRACKED_DEBUG // can slow down the playback loop!
-  if (millis() - printTrackedMillis > 1000) { // Every 1000ms
-    printTrackedMillis = millis();
-
-    Serial.println("TRACKED DEBUG:");
-    Serial.println(currentThrottleLR[2]);
-    Serial.println(currentThrottleLR[3]);
-    Serial.println(currentThrottle);
-  }
-#endif
-
-#else // Normal mode --------------------------------------------------------------------------- 
   // check if the pulsewidth looks like a servo pulse
   if (pulseWidth[3] > pulseMinLimit[3] && pulseWidth[3] < pulseMaxLimit[3]) {
     if (pulseWidth[3] < pulseMin[3]) pulseWidth[3] = pulseMin[3]; // Constrain the value
@@ -1444,11 +1118,7 @@ void mapThrottle() {
     else {
       currentThrottle = 0;
     }
-
-    // TODO: fix this later
-    // currentSpeed = currentThrottle;
   }
-#endif
 
   // Auto throttle --------------------------------------------------------------------------
 
@@ -1506,7 +1176,8 @@ void mapThrottle() {
 
   // Calculate engine load (used for torque converter slip simulation)
   engineLoad = currentThrottle - currentRpm;
-  if (engineLoad < 0 || escIsBraking) engineLoad = 0; // Range is 0 - 500
+  // if (engineLoad < 0 || escIsBraking) engineLoad = 0; // Range is 0 - 500
+  if (engineLoad < 0) engineLoad = 0; // Range is 0 - 500
   if (engineLoad > 180) engineLoad = 180;
 }
 
@@ -1525,12 +1196,7 @@ void engineMassSimulation() {
   static unsigned long printMillis;
   static unsigned long wastegateMillis;
   uint8_t timeBase;
-
-#ifdef SUPER_SLOW
-  timeBase = 6; // super slow running, heavy engines, for example locomotive diesels
-#else
   timeBase = 2;
-#endif
 
   if (millis() - throtMillis > timeBase) { // Every 2 or 6ms
     throtMillis = millis();
@@ -1561,28 +1227,14 @@ void engineMassSimulation() {
       // double clutch transmission
       if (!neutralGear) targetRpm = currentSpeed * gearRatio[selectedAutomaticGear] / 10; // Compute engine RPM
       else targetRpm = reMap(curveLinear, currentThrottle);
-
     }
     else {
       // Manual transmission ----
       if (clutchDisengaged) { // Clutch disengaged: Engine revving allowed
-#if defined VIRTUAL_16_SPEED_SEQUENTIAL
-        targetRpm = currentThrottle;
-#else
         targetRpm = reMap(curveLinear, currentThrottle);
-#endif
       }
       else { // Clutch engaged: Engine rpm synchronized with ESC power (speed)
-
-
-
-#if defined VIRTUAL_3_SPEED || defined VIRTUAL_16_SPEED_SEQUENTIAL // Virtual 3 speed or sequential 16 speed transmission
-        targetRpm = currentSpeed * virtualManualGearRatio[selectedGear] / 10; // Add virtual gear ratios
-        if (targetRpm > 500) targetRpm = 500;
-
-#else // Real 3 speed transmission           
         targetRpm = reMap(curveLinear, currentSpeed);
-#endif
       }
     }
 
@@ -1611,7 +1263,7 @@ void engineMassSimulation() {
     }
 
     // Decelerate engine
-    if (targetRpm < currentRpm && currentThrottle > 0) {
+    if (targetRpm < currentRpm /*&& currentThrottle > 0*/) {
       currentRpm -= dec;
       if (currentRpm < minRpm) currentRpm = minRpm;
     }
@@ -1621,11 +1273,6 @@ void engineMassSimulation() {
     //   currentRpm -= (dec*3);
     //   if (currentRpm < minRpm) currentRpm = minRpm;
     // }
-
-#if defined VIRTUAL_3_SPEED || defined VIRTUAL_16_SPEED_SEQUENTIAL
-    // Limit top speed, depending on manual gear ratio. Ensures, that the engine will not blow up!
-    if (!automatic && !doubleClutch) speedLimit = maxRpm * 10 / virtualManualGearRatio[selectedGear];
-#endif
 
     // Speed (sample rate) output
     engineSampleRate = map(currentRpm, minRpm, maxRpm, maxSampleInterval, minSampleInterval); // Idle
@@ -1663,10 +1310,6 @@ void engineOnOff() {
   }
 #endif
 
-  // if (millis() - idleDelayMillis > 10000) {
-  //   lightsOn = false; // after delay, switch light off
-  // }
-
   // Engine start detection
   if (currentThrottle > 100 && !airBrakeTrigger) {
     #ifdef AUTO_ENGINE_ON_OFF
@@ -1676,233 +1319,6 @@ void engineOnOff() {
   }
 }
 
-//
-// =======================================================================================================
-// LED
-// =======================================================================================================
-//
-
-// uint8_t crankingDim;
-// uint8_t dipDim;
-// uint8_t xenonIgnitionFlash;
-// static unsigned long xenonMillis;
-// uint32_t indicatorFade = 300; // 300 is the fading time, simulating an incandescent bulb
-// uint8_t rearlightDimmedBrightness = 30;
-
-// Brake light sub function ---------------------------------
-// void brakeLightsSub(int8_t brightness) {
-//   if (escIsBraking) {
-//     tailLight.pwm(255 - crankingDim);  // Taillights (full brightness)
-//     brakeLight.pwm(255 - crankingDim); // Brakelight on
-//   }
-//   else {
-//     tailLight.pwm(constrain(brightness - (crankingDim / 2), 0, 255)); // Taillights (reduced brightness)
-//     brakeLight.pwm(constrain(brightness - (crankingDim / 2), 0, 255)); // Brakelight (reduced brightness)
-//   }
-// }
-
-// Headlights sub function ---------------------------------
-// void headLightsSub(bool head, bool fog, bool roof) {
-
-// #ifdef XENON_LIGHTS // Optional xenon ignition flash
-//   if (millis() - xenonMillis > 50) xenonIgnitionFlash = 0; else xenonIgnitionFlash = 170; // bulb is brighter for 50ms
-// #endif
-
-// #ifdef SEPARATE_FULL_BEAM // separate full beam bulb, wired to "rooflight" pin ----
-//   // Headlights (low beam bulb)
-//   if (!head) {
-//     headLight.off();
-//     xenonMillis = millis();
-//   }
-//   else { //ON
-//     headLight.pwm(constrain(255 - crankingDim - 170 + xenonIgnitionFlash, 0, 255));
-//   }
-//   // Headlights (high beam bulb)
-//   if (headLightsFlasherOn || (headLightsHighBeamOn && head)) roofLight.pwm(200 - crankingDim); else roofLight.off();
-
-// #else // Bulbs wired as labeled on the board ----
-//   // Headlights
-//   if (!head) { // OFF, but flasher active
-//     if (!headLightsFlasherOn) headLight.off(); else headLight.on();
-//     xenonMillis = millis();
-//     headLightsHighBeamOn = false;
-//   }
-//   else { //ON
-//     headLight.pwm(constrain(255 - crankingDim - dipDim + xenonIgnitionFlash, 0, 255));
-//   }
-
-//   // Roof lights
-//   if (!roof) roofLight.off(); else roofLight.pwm(130 - crankingDim);
-// #endif // ----
-
-//   // Fog lights
-//   if (!fog) fogLight.off(); else fogLight.pwm(200 - crankingDim);
-// }
-
-// Main LED function --------------------------------------------------------------------------------------
-// void led() {
-
-// #if defined LED_INDICATORS
-//   indicatorFade = 0; // No soft indicator on / off, if LED
-// #endif
-
-//   // Lights brightness ----
-//   if (engineStart) crankingDim = 50; else crankingDim = 0; // lights are dimmer while engine cranking
-//   if (headLightsFlasherOn || headLightsHighBeamOn) dipDim = 10; else dipDim = 170; // High / low beam and headlight flasher (SBUS CH5)
-
-//   // Reversing light ----
-//   if ((engineRunning || engineStart) && escInReverse) reversingLight.pwm(130 - crankingDim);
-//   else reversingLight.off();
-
-//   // Beacons (blue light) ----
-// #if not defined TRACKED_MODE  // Normal beacons mode 
-//   if (blueLightTrigger) {
-//     if (doubleFlashBlueLight) {
-//       beaconLight1.flash(30, 80, 400, 2); // Simulate double flash lights
-//       beaconLight2.flash(30, 80, 400, 2, 330); // Simulate double flash lights (with delay for first pass)
-//     }
-//     else {
-//       beaconLight1.flash(30, 500, 0, 0); // Simulate rotating beacon lights with short flashes
-//       beaconLight2.flash(30, 500, 0, 0, 100); // Simulate rotating beacon lights with short flashes
-//     }
-//   }
-//   else {
-//     beaconLight2.off();
-//     beaconLight1.off();
-//   }
-// #else // Beacons used for tank cannon fire simulation flash in TRACKED_MODE
-//   if (cannonFlash) beaconLight1.on();
-//   else beaconLight1.off();
-// #endif
-
-
-//   // Indicators (turn signals, blinkers) ----
-//   uint8_t indicatorOffBrightness;
-// #if defined INDICATOR_SIDE_MARKERS // Indicators used as US style side markers as well
-//   if (lightsState > 1) indicatorOffBrightness = rearlightDimmedBrightness - crankingDim / 2;
-//   else indicatorOffBrightness = 0;
-// #else
-//   indicatorOffBrightness = 0;
-// #endif
-
-//   if (!hazard) {
-//     if (indicatorLon) {
-//       if (indicatorL.flash(375, 375, 0, 0, 0, indicatorFade, indicatorOffBrightness)) indicatorSoundOn = true; // Left indicator
-//     }
-// #if defined INDICATOR_SIDE_MARKERS // Indicators used as US style side markers as well
-//     else {
-//       if (lightsState > 1) indicatorL.pwm(rearlightDimmedBrightness - crankingDim / 2);
-//       else indicatorL.off(indicatorFade);
-//     }
-// #else
-//     else indicatorL.off(indicatorFade);
-// #endif
-
-//     if (indicatorRon) {
-//       if (indicatorR.flash(375, 375, 0, 0, 0, indicatorFade, indicatorOffBrightness)) indicatorSoundOn = true; // Left indicator
-//     }
-// #if defined INDICATOR_SIDE_MARKERS // Indicators used as US style side markers as well
-//     else {
-//       if (lightsState > 1) indicatorR.pwm(rearlightDimmedBrightness - crankingDim / 2);
-//       else indicatorR.off(indicatorFade);
-//     }
-// #else
-//     else indicatorR.off(indicatorFade);
-// #endif
-//   }
-//   else { // Hazard lights on, if no connection to transmitter (serial & SBUS control mode only)
-//     if (indicatorL.flash(375, 375, 0, 0, 0, indicatorFade)) indicatorSoundOn = true;
-//     indicatorR.flash(375, 375, 0, 0, 0, indicatorFade);
-//   }
-
-//   // Headlights, tail lights ----
-// #ifdef AUTO_LIGHTS // automatic lights mode (deprecated, not maintained anymore!) ************************
-
-// #ifdef XENON_LIGHTS // Optional xenon ignition flash
-//   if (millis() - xenonMillis > 50) xenonIgnitionFlash = 0; else xenonIgnitionFlash = 170; // bulb is brighter for 50ms
-// #endif
-//   if (lightsOn && (engineRunning || engineStart)) {
-//     headLight.pwm(constrain(255 - crankingDim - dipDim + xenonIgnitionFlash, 0, 255));
-//     brakeLightsSub(rearlightDimmedBrightness);
-//   }
-
-//   else {
-//     headLight.off();
-//     tailLight.off();
-//     brakeLight.off();
-//     xenonMillis = millis();
-//     headLightsHighBeamOn = false;
-//   }
-
-//   // Foglights ----
-//   if (lightsOn && engineRunning) fogLight.pwm(200 - crankingDim);
-//   else fogLight.off();
-
-//   // Roof lights ----
-//   if (lightsOn) roofLight.pwm(130 - crankingDim);
-//   else roofLight.off();
-
-//   // Sidelights ----
-//   if (engineOn) sideLight.pwm(200 - crankingDim);
-//   else sideLight.off();
-
-//   // Cabin lights ----
-//   if (!lightsOn) cabLight.pwm(255 - crankingDim);
-//   else cabLight.off();
-
-// #else // manual lights mode ************************
-//   // Lights state machine
-//   switch (lightsState) {
-
-//     case 0: // lights off ---------------------------------------------------------------------
-//       cabLight.off();
-//       sideLight.off();
-//       headLightsSub(false, false, false);
-//       brakeLightsSub(0); // 0 brightness, if not braking
-//       break;
-
-//     case 1: // cab lights ---------------------------------------------------------------------
-//       cabLight.pwm(255 - crankingDim);
-//       sideLight.off();
-//       headLightsSub(false, false, false);
-//       brakeLightsSub(0); // 0 brightness, if not braking
-//       break;
-
-//     case 2: // cab & roof & side lights ---------------------------------------------------------------------
-//       cabLight.pwm(255 - crankingDim);
-//       sideLight.pwm(sideLightsBrightness - crankingDim);
-//       headLightsSub(false, false, true);
-//       fogLight.off();
-//       brakeLightsSub(0); // 0 brightness, if not braking
-//       break;
-
-//     case 3: // roof & side & head lights ---------------------------------------------------------------------
-//       cabLight.off();
-//       sideLight.pwm(sideLightsBrightness - crankingDim);
-//       headLightsSub(true, false, true);
-//       brakeLightsSub(rearlightDimmedBrightness); // 50 brightness, if not braking
-//       break;
-
-//     case 4: // roof & side & head & fog lights ---------------------------------------------------------------------
-// #ifdef NO_FOGLIGHTS
-//       lightsState = 5; // Skip foglights
-// #endif
-//       cabLight.off();
-//       sideLight.pwm(sideLightsBrightness - crankingDim);
-//       headLightsSub(true, true, true);
-//       brakeLightsSub(rearlightDimmedBrightness); // 50 brightness, if not braking
-//       break;
-
-//     case 5: // cab & roof & side & head & fog lights ---------------------------------------------------------------------
-//       cabLight.pwm(255 - crankingDim);
-//       sideLight.pwm(sideLightsBrightness - crankingDim);
-//       headLightsSub(true, true, true);
-//       brakeLightsSub(rearlightDimmedBrightness); // 50 brightness, if not braking
-//       break;
-
-//   } // End of state machine
-// #endif // End of manual lights mode ************************
-// }
 
 //
 // =======================================================================================================
@@ -1923,92 +1339,6 @@ void shaker() {
   // else shakerMotor.off();
 }
 
-//
-// =======================================================================================================
-// MANUAL TAMIYA 3 SPEED GEARBOX DETECTION
-// =======================================================================================================
-//
-
-void gearboxDetection() {
-
-  static uint8_t previousGear = 1;
-  static boolean previousReverse;
-  static boolean sequentialLock;
-  static unsigned long upShiftingMillis;
-  static unsigned long downShiftingMillis;
-
-#if defined TRACKED_MODE // CH2 is used for left throttle in TRACKED_MODE --------------------------------
-  selectedGear = 2;
-
-#else // only active, if not in TRACKED_MODE -------------------------------------------------------------
-  // if automatic transmission, always 2nd gear
-  if (automatic || doubleClutch) pulseWidth[2] = 1500;
-
-#ifndef VIRTUAL_16_SPEED_SEQUENTIAL // 3 gears, directly selected by 3 position switch ----
-  // Gear detection
-  if (pulseWidth[2] > 1700) selectedGear = 3;
-  else if (pulseWidth[2] < 1300) selectedGear = 1;
-  else selectedGear = 2;
-
-#else // 16 gears, selected by up / down impulses ----
-  if (pulseWidth[2] > 1700 && selectedGear < 16 && !sequentialLock) {
-    sequentialLock = true;
-    selectedGear ++;
-  }
-  else if (pulseWidth[2] < 1300 && selectedGear > 1 && !sequentialLock) {
-    sequentialLock = true;
-    selectedGear --;
-  }
-  if (pulseWidth[2] > 1400 && pulseWidth[2] < 1600) sequentialLock = false;
-#endif // End of VIRTUAL_16_SPEED_SEQUENTIAL ----
-
-  // Gear upshifting detection
-  if (selectedGear > previousGear) {
-    gearUpShiftingInProgress = true;
-    gearUpShiftingPulse = true;
-    shiftingTrigger = true;
-    previousGear = selectedGear;
-  }
-
-  // Gear upshifting duration
-  if (!gearUpShiftingInProgress) upShiftingMillis = millis();
-  if (millis() - upShiftingMillis > 700) gearUpShiftingInProgress = false;
-
-  // Gear downshifting detection
-  if (selectedGear < previousGear) {
-    gearDownShiftingInProgress = true;
-    gearDownShiftingPulse = true;
-    shiftingTrigger = true;
-    previousGear = selectedGear;
-  }
-
-  // Gear downshifting duration
-  if (!gearDownShiftingInProgress) downShiftingMillis = millis();
-  if (millis() - downShiftingMillis > 300) gearDownShiftingInProgress = false;
-
-
-  // Reverse gear engaging / disengaging detection
-  if (escInReverse != previousReverse) {
-    previousReverse = escInReverse;
-    shiftingTrigger = true; // Play shifting sound
-  }
-
-
-#ifdef MANUAL_TRANS_DEBUG
-  static unsigned long manualTransDebugMillis;
-  if (millis() - manualTransDebugMillis > 100) {
-    manualTransDebugMillis = millis();
-    Serial.println(currentThrottle);
-    Serial.println(selectedGear);
-    Serial.println(sequentialLock);
-    Serial.println(currentRpm);
-    Serial.println(currentSpeed);
-    Serial.println("");
-  }
-#endif
-
-#endif // End of not TRACKED_MODE -----------------------------------------------------------------------
-}
 
 //
 // =======================================================================================================
@@ -2032,7 +1362,7 @@ void automaticGearSelector() {
     downShiftPoint = map(engineLoad, 0, 180, 150, 250); // 150, 250
 
     if (escInReverse) { // Reverse (only one gear)
-      Serial.println("REVERSE");
+      // Serial.println("REVERSE");
       selectedAutomaticGear = 0;
     }
     else { // Forward
@@ -2041,12 +1371,12 @@ void automaticGearSelector() {
       if (millis() - lastDownShiftingMillis > 500 && currentRpm >= upShiftPoint && engineLoad < 5) { // 500ms locking timer!
         selectedAutomaticGear ++; // Upshifting (load maximum is important to prevent gears from oscillating!)
         lastUpShiftingMillis = millis();
-        Serial.println("upshifting");
+        // Serial.println("upshifting");
       }
       if (millis() - lastUpShiftingMillis > 1000 && selectedAutomaticGear > 1 && (currentRpm <= downShiftPoint || engineLoad > 100)) { // 1000ms locking timer!
         selectedAutomaticGear --; // Downshifting incl. kickdown
         lastDownShiftingMillis = millis();
-        Serial.println("downshifting");
+        // Serial.println("downshifting");
       }
 
       selectedAutomaticGear = constrain(selectedAutomaticGear, 1, NumberOfAutomaticGears);
@@ -2063,31 +1393,26 @@ void automaticGearSelector() {
     Serial.println(selectedAutomaticGear);
     Serial.print("Engine Load:    ");
     Serial.println(engineLoad);
-    Serial.print("UpShiftPoint:   ");
-    Serial.println(upShiftPoint);
+    // Serial.print("UpShiftPoint:   ");
+    // Serial.println(upShiftPoint);
     Serial.print("RPM:            ");
     Serial.println(currentRpm);
-    Serial.print("DownShiftPoint: ");
-    Serial.println(downShiftPoint);
+    // Serial.print("DownShiftPoint: ");
+    // Serial.println(downShiftPoint);
     Serial.println("===========");
 #endif
   }
 }
 
-//
-// =======================================================================================================
-// ESC CONTROL
-// =======================================================================================================
-//
 
-// If you connect your ESC to pin 33, the vehicle inertia is simulated. Direct brake (crawler) ESC required
-// *** WARNING!! Do it at your own risk!! There is a falisafe function in case, the signal input from the
-// receiver is lost, but if the ESP32 crashes, the vehicle could get out of control!! ***
+#define DRIVE_STATE_STAND_STILL 0
+#define DRIVE_STATE_FORWARD 1
+#define DRIVE_STATE_FORWARD_BRAKE 2
+#define DRIVE_STATE_BACKWARD 3
+#define DRIVE_STATE_BACKWARD_BRAKE 4
 
-void esc() {
 
-#if not defined TRACKED_MODE // No ESC control in TRACKED_MODE
-
+void newEngineSimulation() {
   static int32_t escPulseWidth = 1500;
   static uint32_t escSignal;
   static unsigned long escMillis;
@@ -2098,20 +1423,6 @@ void esc() {
   static int8_t driveRampGain;
   static int8_t brakeRampRate;
   uint8_t escRampTime;
-
-  // Gear dependent ramp speed for acceleration & deceleration
-// #if defined VIRTUAL_3_SPEED
-//   escRampTime = escRampTimeThirdGear * 10 / virtualManualGearRatio[selectedGear];
-
-// #elif defined VIRTUAL_16_SPEED_SEQUENTIAL
-//   //escRampTime = escRampTimeThirdGear;// * 10 / map(virtualManualGearRatio[selectedGear], 155, 10, 23, 10);
-//   escRampTime = escRampTimeThirdGear * virtualManualGearRatio[selectedGear] / 5;
-
-// #else // TAMIYA 3 speed shifting transmission
-  if (selectedGear == 1) escRampTime = escRampTimeFirstGear; // about 20
-  if (selectedGear == 2) escRampTime = escRampTimeSecondGear; // about 50
-  if (selectedGear == 3) escRampTime = escRampTimeThirdGear; // about 75
-// #endif
 
   if (millis() - escMillis > escRampTime) { // About very 20 - 75ms
     escMillis = millis();
@@ -2155,21 +1466,17 @@ void esc() {
 
     // Drive state state machine **********************************************************************************
     switch (driveState) {
-
-      case 0: // Standing still ---------------------------------------------------------------------
+      case DRIVE_STATE_STAND_STILL: // Standing still ---------------------------------------------------------------------
         escIsBraking = false;
         escInReverse = false;
         escIsDriving = false;
         escPulseWidth = pulseZero[3];  // ESC to neutral position
-#ifdef VIRTUAL_16_SPEED_SEQUENTIAL
-        selectedGear = 1;
-#endif
 
-        if (pulse == 1 && engineRunning && !neutralGear) driveState = 1; // Driving forward
-        if (pulse == -1 && engineRunning && !neutralGear) driveState = 3; // Driving backwards
+        if (pulse == 1 && engineRunning && !neutralGear) driveState = DRIVE_STATE_FORWARD; // Driving forward
+        if (pulse == -1 && engineRunning && !neutralGear) driveState = DRIVE_STATE_BACKWARD; // Driving backwards
         break;
 
-      case 1: // Driving forward ---------------------------------------------------------------------
+      case DRIVE_STATE_FORWARD: // Driving forward ---------------------------------------------------------------------
         escIsBraking = false;
         escInReverse = false;
         escIsDriving = true;
@@ -2180,42 +1487,22 @@ void esc() {
         if (escPulseWidth > pulseWidth[3] && escPulseWidth > pulseZero[3]) escPulseWidth -= (driveRampRate * driveRampGain); // Slower
 
         if (gearUpShiftingPulse && shiftingAutoThrottle) { // lowering RPM, if shifting up transmission
-#if not defined VIRTUAL_3_SPEED && not defined VIRTUAL_16_SPEED_SEQUENTIAL // Only, if we have a real 3 speed trasnsmission        
-          escPulseWidth -= currentSpeed / 4; // Synchronize engine speed
-#endif
           gearUpShiftingPulse = false;
           escPulseWidth = constrain(escPulseWidth, pulseZero[3], pulseMax[3]);
         }
         if (gearDownShiftingPulse && shiftingAutoThrottle) { // increasing RPM, if shifting down transmission
-#if not defined VIRTUAL_3_SPEED && not defined VIRTUAL_16_SPEED_SEQUENTIAL // Only, if we have a real 3 speed trasnsmission      
-          escPulseWidth += 50; // Synchronize engine speed
-#endif
           gearDownShiftingPulse = false;
           escPulseWidth = constrain(escPulseWidth, pulseZero[3], pulseMax[3]);
         }
 
-        if (pulse == -1 && escPulse == 1) driveState = 2; // Braking forward
-        if (pulse == 0 && escPulse == 0) driveState = 0; // standing still
-        break;
-
-      case 2: // Braking forward ---------------------------------------------------------------------
-        escIsBraking = true;
-        escInReverse = false;
-        escIsDriving = false;
-        if (escPulseWidth > pulseZero[3]) escPulseWidth -= brakeRampRate; // brake with variable deceleration
-        if (escPulseWidth < pulseZero[3]) escPulseWidth = pulseZero[3]; // Overflow bug prevention!
-
-        if (pulse == 0 && escPulse == 1 && !neutralGear) {
-          driveState = 1; // Driving forward
+        if (pulse == -1 && escPulse == 1) {
+          driveState = DRIVE_STATE_STAND_STILL; // Change direction
           airBrakeTrigger = true;
         }
-        if (pulse == 0 && escPulse == 0) {
-          driveState = 0; // standing still
-          airBrakeTrigger = true;
-        }
+        if (pulse == 0 && escPulse == 0) driveState = DRIVE_STATE_STAND_STILL; // standing still
         break;
 
-      case 3: // Driving backwards ---------------------------------------------------------------------
+      case DRIVE_STATE_BACKWARD: // Driving backwards ---------------------------------------------------------------------
         escIsBraking = false;
         escInReverse = true;
         escIsDriving = true;
@@ -2226,41 +1513,21 @@ void esc() {
         if (escPulseWidth < pulseWidth[3] && escPulseWidth < pulseZero[3]) escPulseWidth += (driveRampRate * driveRampGain); // Slower
 
         if (gearUpShiftingPulse && shiftingAutoThrottle) { // lowering RPM, if shifting up transmission
-#if not defined VIRTUAL_3_SPEED && not defined VIRTUAL_16_SPEED_SEQUENTIAL // Only, if we have a real 3 speed trasnsmission        
-          escPulseWidth += currentSpeed / 4; // Synchronize engine speed
-#endif
           gearUpShiftingPulse = false;
           escPulseWidth = constrain(escPulseWidth, pulseMin[3], pulseZero[3]);
         }
         if (gearDownShiftingPulse && shiftingAutoThrottle) { // increasing RPM, if shifting down transmission
-#if not defined VIRTUAL_3_SPEED && not defined VIRTUAL_16_SPEED_SEQUENTIAL // Only, if we have a real 3 speed trasnsmission      
-          escPulseWidth -= 50; // Synchronize engine speed
-#endif
           gearDownShiftingPulse = false;
           escPulseWidth = constrain(escPulseWidth, pulseMin[3], pulseZero[3]);
         }
 
-        if (pulse == 1 && escPulse == -1) driveState = 4; // Braking backwards
-        if (pulse == 0 && escPulse == 0) driveState = 0; // standing still
-        break;
-
-      case 4: // Braking backwards ---------------------------------------------------------------------
-        escIsBraking = true;
-        escInReverse = true;
-        escIsDriving = false;
-        if (escPulseWidth < pulseZero[3]) escPulseWidth += brakeRampRate; // brake with variable deceleration
-        if (escPulseWidth > pulseZero[3]) escPulseWidth = pulseZero[3]; // Overflow bug prevention!
-
-        if (pulse == 0 && escPulse == -1 && !neutralGear) {
-          driveState = 3; // Driving backwards
+        if (pulse == 1 && escPulse == -1) {
+          driveState = DRIVE_STATE_STAND_STILL; // Change direction
           airBrakeTrigger = true;
         }
-        if (pulse == 0 && escPulse == 0) {
-          driveState = 0; // standing still
-          airBrakeTrigger = true;
-        }
-        break;
 
+        if (pulse == 0 && escPulse == 0) driveState = DRIVE_STATE_STAND_STILL; // standing still
+        break;
     } // End of state machine **********************************************************************************
 
 
@@ -2273,38 +1540,29 @@ void esc() {
 
 
     // ESC control
-    #ifndef ESC_DIR
-        // Serial.print("pulsWidth ");
-        // Serial.println(escPulseWidth);
-        // Serial.print("pulsMin ");
-        // Serial.println(escPulseMin);
-        // Serial.print("pulsMax ");
-        // Serial.println(escPulseMax);
-
-        if (escPulseMin > 0 && escPulseMax > 0) {
-          escSignal = map(escPulseWidth, escPulseMin, escPulseMax, 3278, 6553); // 1 - 2ms (5 - 10% pulsewidth of 65534, not reversed)
-        } else {
-          Serial.println("NOOOOOOO!!!!!!!");
-        }
-    #else
-        escSignal = map(escPulseWidth, escPulseMax, escPulseMin, 3278, 6553); // 1 - 2ms (5 - 10% pulsewidth of 65534, reversed)
-    #endif
     
-    escOut.pwm(escSignal);
-
+    // if (escPulseMin > 0 && escPulseMax > 0) {
+    //   escSignal = map(escPulseWidth, escPulseMin, escPulseMax, 3278, 6553); // 1 - 2ms (5 - 10% pulsewidth of 65534, not reversed)
+    // } else {
+    //   Serial.println("NOOOOOOO!!!!!!!");
+    // }
+    
+    // escOut.pwm(escSignal);
 
     // Calculate a speed value from the pulsewidth signal (used as base for engine sound RPM while clutch is engaged)
-    if (escPulseWidth > pulseMaxNeutral[3]) {
-      currentSpeed = map(escPulseWidth, pulseMaxNeutral[3], pulseMax[3], 0, 500);
-    }
-    else if (escPulseWidth < pulseMinNeutral[3]) {
-      currentSpeed = map(escPulseWidth, pulseMinNeutral[3], pulseMin[3], 0, 500);
-    }
-    else currentSpeed = 0;
+    // if (escPulseWidth > pulseMaxNeutral[3]) {
+    //   currentSpeed = map(escPulseWidth, pulseMaxNeutral[3], pulseMax[3], 0, 500);
+    // }
+    // else if (escPulseWidth < pulseMinNeutral[3]) {
+    //   currentSpeed = map(escPulseWidth, pulseMinNeutral[3], pulseMin[3], 0, 500);
+    // }
+    // else currentSpeed = 0;
 
+    // For now let's map speed directly with trottle (best solution for crawler)
+    currentSpeed = currentThrottle;
   }
-#endif
 }
+
 
 //
 // =======================================================================================================
@@ -2321,243 +1579,116 @@ unsigned long loopDuration() {
   return loopTime;
 }
 
-//
-// =======================================================================================================
-// HORN, BLUELIGHT & SIREN TRIGGERING BY CH4 (POT)
-// =======================================================================================================
-//
+bool headLightsOn = false;
+bool roofLightsOn = false;
 
-void triggerHorn() {
-
-  // detect horn trigger ( impulse length > 1900us) -------------
-  if (pulseWidth[4] > 1900 && pulseWidth[4] < pulseMaxLimit[4]) {
+void checkButtons() {
+  // CH 5 - engine on/off, horn
+  if (pulseWidth[5] < 1200) {
+    // Engine off
+    engineOn = false;
+    hornTrigger = false;
+    hornLatch = false;
+  } else if (pulseWidth[5] > 1200 && pulseWidth[5] <= 1700) {
+    // Engine on
+    engineOn = true;
+    hornTrigger = false;
+    hornLatch = false;
+  } else if (pulseWidth[5] > 1700) {
+    // horn
+    engineOn = true;
     hornTrigger = true;
     hornLatch = true;
   }
-  else {
-    hornTrigger = false;
-  }
 
-  // detect siren trigger ( impulse length < 1100us) ----------
-  if (pulseWidth[4] < 1100 && pulseWidth[4] > pulseMinLimit[4]) {
-    sirenTrigger = true;
-    sirenLatch = true;
-  }
-  else {
-    sirenTrigger = false;
-  }
+  // CH 6 - lights
+  if (pulseWidth[6] < 1200) {
+    headLight.off();
+    roofLight.off();
 
-  // detect bluelight trigger ( impulse length < 1300us) ----------
-  // if (pulseWidth[4] < 1300 && pulseWidth[4] > pulseMinLimit[4] || sirenLatch) {
-  //   blueLightTrigger = true;
-  // }
-  // else {
-  //   blueLightTrigger = false;
-  // }
+    headLightsOn = false;
+    roofLightsOn = false;
+
+  } else if (pulseWidth[6] > 1200 && pulseWidth[6] <= 1500) {
+    Serial.println("krotkie");
+    headLight.pwm(80);
+    roofLight.off();
+
+    headLightsOn = true;
+    roofLightsOn = false;
+  } else if (pulseWidth[6] > 1500 && pulseWidth[6] <= 1700) {
+    headLight.on();
+    roofLight.off();
+    Serial.println("dlugie");
+
+    headLightsOn = true;
+    roofLightsOn = false;
+  }
+  else if (pulseWidth[6] > 1700) {
+    headLight.on();
+    roofLight.on();
+    Serial.println("dlugie i halogeny");
+
+    headLightsOn = true;
+    roofLightsOn = true;
+  }
 }
 
-//
-// =======================================================================================================
-// INDICATOR (TURN SIGNAL) TRIGGERING
-// =======================================================================================================
-//
-
-// void triggerIndicators() {
-
-//   static boolean L;
-//   static boolean R;
-
-// #ifdef AUTO_INDICATORS // Automatic, steering triggered indicators ********
-//   // detect left indicator trigger -------------
-//   if (pulseWidth[1] > (1500 + indicatorOn)) {
-//     L = true;
-//     R = false;
-//   }
-//   if (pulseWidth[1] < (1500 + indicatorOn / 3)) L = false;
-
-//   // detect right indicator trigger -------------
-//   if (pulseWidth[1] < (1500 - indicatorOn)) {
-//     R = true;
-//     L = false;
-//   }
-//   if (pulseWidth[1] > (1500 - indicatorOn / 3)) R = false;
-
-// #else // Manually triggered indicators ********
-//   // detect left indicator trigger -------------
-//   if (pulseWidth[6] > 1900) {
-//     L = true;
-//     R = false;
-//   }
-//   if (pulseWidth[6] < (1500 - indicatorOn / 3)) L = false;
-
-//   // detect right indicator trigger -------------
-//   if (pulseWidth[6] < 1100) {
-//     R = true;
-//     L = false;
-//   }
-//   if (pulseWidth[6] > (1500 + indicatorOn / 3)) R = false;
-
-//   // Reset by steering -------------
-//   static int steeringOld;
-
-//   if (pulseWidth[1] < steeringOld - 50) {
-//     L = false;
-//     steeringOld = pulseWidth[1];
-//   }
-
-//   if (pulseWidth[1] > steeringOld + 50) {
-//     R = false;
-//     steeringOld = pulseWidth[1];
-//   }
-
-// #endif // End of manually triggered indicators
-
-//   // Indicator direction
-//   if (!INDICATOR_DIR) {
-//     indicatorLon = L;
-//     indicatorRon = R;
-//   }
-//   else {
-//     indicatorLon = R;
-//     indicatorRon = L;
-//   }
-
-//   if (indicatorLon || indicatorRon) hazard = false;
-
-// }
-
-//
-// =======================================================================================================
-// RC TRIGGER SECTION (rcTrigger LIBRARY REQUIRED)
-// =======================================================================================================
-//
-
-void rcTrigger() {
-
-  // Channel assignment see "remoteSetup.xlsx"
-
-  // Potentiometers or 3 position switches ******************************************************************
-
-  // CH5 (FUNCTION_R) ----------------------------------------------------------------------
-  // Cycling light state machine, if dual rate @75% and long in position -----
-  // static bool lightsStateLock;
-  // if (functionR75u.toggleLong(pulseWidth[5], 1150) != lightsStateLock) {
-  //   if (lightsState >= 5) lightsState = 0;
-  //   else lightsState ++;
-  //   lightsStateLock = !lightsStateLock;
-  // }
-
-  // Toggling high / low beam, if dual rate @100% and short in position
-  // static bool beamStateLock;
-  // if (functionR100u.toggleLong(pulseWidth[5], 1000) != beamStateLock) {
-  //   headLightsHighBeamOn = !headLightsHighBeamOn; // This lock is required, because high / low beam needs to be able to be changed in other program sections!
-  //   beamStateLock = !beamStateLock;
-  // }
-
-  // Headlight flasher as long as in position, if dual rate @100% -----
-  // headLightsFlasherOn = functionR100u.momentary(pulseWidth[5], 1000);
-
-  // Jake brake as long as in position, if dual rate @100% -----
-// #ifdef JAKE_BRAKE_SOUND
-//   jakeBrakeRequest = functionR100d.momentary(pulseWidth[5], 2000) && currentRpm > jakeBrakeMinRpm;
-// #endif
-
-  // Volume high / low, if vehicle standing still and dual rate @100%
-  // if (driveState == 0) {
-  //   if (functionR100d.toggleLong(pulseWidth[5], 2000)) masterVolume = 75; else masterVolume = 120; // Change volume between indoor and outdoor mode
-  // }
-
-  // Engine on / off, if dual rate @75% and long in position -----
-#ifndef AUTO_ENGINE_ON_OFF
-  static bool engineStateLock;
-  if (driveState == 0 && (engineState == 0 || engineState == 2)) { // Only, if vehicle stopped and engine idling or off!
-    // if (functionR75d.toggleLong(pulseWidth[5], 1850) != engineStateLock) {
-      // engineOn = !engineOn; // This lock is required, because engine on / off needs to be able to be changed in other program sections!
-      // engineStateLock = !engineStateLock;
-    // }
+void processReverseLight() {
+  if (engineRunning && escInReverse) {
+    // Reverse lights on
+    reversingLight.on();
+  } else {
+    // Reverse lights off
+    reversingLight.off();
   }
-#endif
-
-  // CH6 (FUNCTION_L) ----------------------------------------------------------------------
-
-  // Indicators are triggered in triggerIndicators()
-
-  //Hazards on / off, if dual rate @75% and long in position -----
-// #ifndef AUTO_INDICATORS
-//   static bool hazardStateLock;
-//   if (functionL75l.toggleLong(pulseWidth[6], 1150) != hazardStateLock) {
-//     hazard = ! hazard;
-//     hazardStateLock = ! hazardStateLock;
-//   }
-// #endif
-
-  // Couple / uncouple 5th wheel, if dual rate @75% and long in position -----
-  // static bool fifthWheelStateLock;
-  // if (driveState == 0) { // Only allow change, if vehicle stopped!
-  //   if (functionL75r.toggleLong(pulseWidth[6], 1850) != fifthWheelStateLock)  {
-  //     unlock5thWheel = !unlock5thWheel;
-  //     fifthWheelStateLock = !fifthWheelStateLock;
-  //   }
-  // }
-
-  // Latching 2 position switches ******************************************************************
-//   mode1 = mode1Trigger.onOff(pulseWidth[8], 1800, 1200); // CH8 (MODE1)
-// #ifdef TRANSMISSION_NEUTRAL
-//   neutralGear = mode1; // Transmission neutral
-// #endif
-//   mode2 = mode2Trigger.onOff(pulseWidth[9], 1800, 1200); // CH9 (MODE2)
-//   if (mode2) sound1trigger = true; //Trigger sound 1 (It is reset after playback is done
-
-  // Momentary buttons ******************************************************************
-  // Engine on / off momentary button CH10 -----
-#ifndef AUTO_ENGINE_ON_OFF
-  static bool engineStateLock2;
-  if (driveState == 0 && (engineState == 0 || engineState == 2)) { // Only, if vehicle stopped and engine idling or off!
-    // if (momentary1Trigger.toggleLong(pulseWidth[10], 2000) != engineStateLock2) {
-      // engineOn = !engineOn; // This lock is required, because engine on / off needs to be able to be changed in other program sections!
-      // engineStateLock2 = !engineStateLock2;
-    // }
-  }
-#endif
-
-  // Flags ******************************************************************
-#ifndef AUTO_INDICATORS
-  // left = indicatorLTrigger.onOff(pulseWidth[12], 1800, 1200); // CH12 INDICATOR_LEFT not used
-  // right = indicatorRTrigger.onOff(pulseWidth[13], 1800, 1200); // CH13 INDICATOR_RIGHT not used
-#else
-  hazard = hazardsTrigger.onOff(pulseWidth[11], 1800, 1200); // CH11 HAZARDS
-#endif
 }
 
-//
-// =======================================================================================================
-// TRAILER PRESENCE SWITCH
-// =======================================================================================================
-//
-// #if not defined THIRD_BRAKLELIGHT
-// void trailerPresenceSwitchRead() {
+bool braking = false;
 
-//   static unsigned long switchMillis;
-//   static boolean couplerSwitchStateLatch;
+void processStopLight() {
+  static unsigned long lastStopLightMilis = millis();
+  static int16_t lastThrottle = 0;
 
-//   if (couplerSwitchInteruptLatch) {
-//     switchMillis = millis();
-//     couplerSwitchInteruptLatch = false;
-//     couplerSwitchStateLatch = true;
-//   }
+  if (engineRunning) {
+    if (currentThrottle == 0) {
+      braking = true;
+    } else if (millis() - lastStopLightMilis >= 300) {
+      int16_t throttleDifference = lastThrottle - currentThrottle;
 
-//   if (couplerSwitchStateLatch && millis() - switchMillis > 1) { // Debouncing delay
-//     if (digitalRead(COUPLER_SWITCH_PIN)) {
-//       couplingTrigger = true;
-//       couplerSwitchStateLatch = false;
-//     }
-//     else {
-//       uncouplingTrigger = true;
-//       couplerSwitchStateLatch = false;
-//     }
-//   }
-// }
-// #endif
+      if (throttleDifference > 10) {
+        braking = true;
+      } else {
+        braking = false;
+      }
+
+      lastThrottle = currentThrottle;
+      lastStopLightMilis = millis();
+    }
+  } else {
+    braking = false;
+  }
+
+  if (braking) {
+    tailLight.pwm(80);
+  } else {
+    if (headLightsOn) {
+      tailLight.pwm(40);
+    } else {
+      tailLight.off();
+    }
+  }
+
+  // Serial.print("is braking: ");
+  // Serial.println(braking ? "yes" : "no");
+
+  // Serial.print("current throttle: ");
+  // Serial.print(currentThrottle);
+  // Serial.print(" engineRunning: ");
+  // Serial.print(engineRunning ? "yes" : "no");
+  // Serial.print(" reverse: ");
+  // Serial.println(escInReverse ? "yes" : "no");
+}
 
 //
 // =======================================================================================================
@@ -2567,34 +1698,18 @@ void rcTrigger() {
 
 void loop() {
 
-// #if defined SBUS_COMMUNICATION
-//   readSbusCommands(); // SBUS communication (pin 36)
-//   mcpwmOutput(); // PWM servo signal output
-// #elif defined IBUS_COMMUNICATION
-//   readIbusCommands(); // IBUS communication (pin 36)
-//   mcpwmOutput(); // PWM servo signal output
-// #elif defined PPM_COMMUNICATION
-//   readPpmCommands(); // PPM communication (pin 34)
-//   mcpwmOutput(); // PWM servo signal output
-// #else
   // measure RC signals mark space ratio
   readPwmSignals();
-// #endif
 
   // Map pulsewidth to throttle
   mapThrottle();
 
-  // Horn triggering
-  triggerHorn();
+  // Check buttons actions
+  checkButtons();
 
-  // Indicator (turn signal) triggering
-  // triggerIndicators();
-
-  // rcTrigger
-  // rcTrigger();
-
-  // Read trailer switch state
-  // trailerPresenceSwitchRead();
+  // Auto lights
+  processReverseLight();
+  processStopLight();
 
 }
 
@@ -2616,20 +1731,7 @@ void Task1code(void *pvParameters) {
     // Call gear selector
     if (automatic || doubleClutch) automaticGearSelector();
 
-    // Switch engine on or off
-    engineOnOff();
-
-    // LED control
-    // led();
-
-    // Shaker control
-    // shaker();
-
-    // Gearbox detection
-    // gearboxDetection();
-
-    // ESC control (Crawler ESC with direct brake on pin 33)
-    esc();
+    newEngineSimulation();
 
     // measure loop time
     //loopTime = loopDuration(); // for debug only
