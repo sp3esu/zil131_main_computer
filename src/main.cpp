@@ -62,6 +62,12 @@ const float codeVersion = 6.63; // Software revision.
 #include "driver/rmt.h" // No need to install this, comes with ESP32 board definition (used for PWM signal detection)
 #include "driver/mcpwm.h" // for servo PWM output
 
+#include <WiFi.h>
+#include <AsyncTCP.h>
+#include <ESPAsyncWebServer.h>
+#include <AsyncJson.h>
+#include <ArduinoJson.h>
+
 //
 // =======================================================================================================
 // PIN ASSIGNMENTS & GLOBAL VARIABLES (Do not play around here)
@@ -841,6 +847,57 @@ void readPwmSignals();
 void processRawChannels();
 void failsafeRcSignals();
 
+// Create AsyncWebServer object on port 80
+AsyncWebServer server(80);
+
+void notFound(AsyncWebServerRequest *request) {
+    request->send(404, "text/plain", "Not found");
+}
+
+void setupWIFI() {
+  Serial.print("WIFI initialization...");
+  // WiFi.mode(WIFI_MODE_STA);
+  // Serial.println(WiFi.macAddress());
+
+  WiFi.mode(WIFI_AP_STA);
+  WiFi.disconnect();
+  WiFi.softAP("ZIL_131", "12345678");
+  delay(100);
+  Serial.println(" done!");
+  
+  // Route for root / web page
+  server.on("/", HTTP_GET, [](AsyncWebServerRequest *request){
+    Serial.println("handling endpoint '/'");
+    request->send(200, "text/plain", "OK\n");
+  });
+
+  server.on("/data", HTTP_GET, [](AsyncWebServerRequest *request){
+    Serial.println("handling endpoint '/data'");
+    request->send(200, "text/plain", "data\n");
+  });
+
+  server.on("/test", HTTP_GET, [](AsyncWebServerRequest *request){
+    Serial.println("handling endpoint '/test'");
+    request->send(200, "text/plain", "hej! to ja! zil 131\n");
+  });
+
+  server.on("/json", HTTP_GET, [](AsyncWebServerRequest *request){
+    Serial.println("handling endpoint '/json'");
+    
+    AsyncJsonResponse *response = new AsyncJsonResponse();
+    response->addHeader("Server","ESP Async Web Server");
+    JsonObject& root = response->getRoot();
+    root["heap"] = ESP.getFreeHeap();
+    root["ssid"] = WiFi.SSID();
+    response->setLength();
+    request->send(response);
+  });
+
+  server.onNotFound(notFound);
+
+  server.begin();
+}
+
 
 void setup() {
   // Watchdog timers need to be disabled, if task 1 is running without delay(1)
@@ -878,6 +935,9 @@ void setup() {
 
   // Serial setup
   Serial.begin(115200); // USB serial (for DEBUG)
+  
+  // Wifi setup
+  setupWIFI();
 
   // PWM ----
   if (MAX_RPM_PERCENTAGE > maxPwmRpmPercentage) MAX_RPM_PERCENTAGE = maxPwmRpmPercentage; // Limit RPM range
@@ -1707,6 +1767,12 @@ void loop() {
   processReverseLight();
   processStopLight();
 
+  // static unsigned long lastWifiPrint = millis();
+  // if (millis() - lastWifiPrint > 1000) {
+  //   Serial.print("WIFI address: ");
+  //   Serial.println(WiFi.gatewayIP());
+  //   lastWifiPrint = millis();
+  // }
 }
 
 //
