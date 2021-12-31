@@ -1,4 +1,6 @@
 #include <Arduino.h>
+#include <Wire.h>
+#include <SPI.h>
 
 /* RC engine sound & LED controller for Arduino ESP32. Written by TheDIYGuy999
     Based on the code for ATmega 328: https://github.com/TheDIYGuy999/Rc_Engine_Sound
@@ -41,6 +43,9 @@ const float codeVersion = 6.63; // Software revision.
 //#define MANUAL_TRANS_DEBUG // uncomment it to debug the manual transmission
 //#define TRACKED_DEBUG // debugging tracked vehicle mode
 
+// #define DEBUG_POWER_MEASUREMENT
+#define DEBUG_POWER_PRINT_DELAY 1000
+
 // TODO = Things to clean up!
 
 //
@@ -65,8 +70,6 @@ const float codeVersion = 6.63; // Software revision.
 #include <WiFi.h>
 #include <AsyncTCP.h>
 #include <ESPAsyncWebServer.h>
-#include <AsyncJson.h>
-#include <ArduinoJson.h>
 
 //
 // =======================================================================================================
@@ -136,6 +139,11 @@ const uint8_t PWM_PINS[PWM_CHANNELS_NUM] = { 13, 12, 14, 27, 35, 34 }; // Input 
 // 10kOhm potentiometer. The other outer leg connects to GND. The middle leg connects to both inputs
 // of a PAM8403 amplifier and allows to adjust the volume. This way, two speakers can be used.
 
+// Power Measurement Settings
+#define POWER_READING_DELAY 250
+#define POWER_DEVICES_ON_BUS 3
+
+
 // Objects *************************************************************************************
 // Status LED objects (also used for PWM shaker motor and ESC control) -----
 statusLED escOut(false);
@@ -158,6 +166,13 @@ statusLED roofLight(false);
 
 // Global variables **********************************************************************
 SemaphoreHandle_t xPwmSemaphore;
+
+// Power Measurement Data
+struct powe_data_t {
+  double milli_volts;
+  double milli_amps;
+  double milli_wats;
+} power_channels[POWER_DEVICES_ON_BUS];
 
 
 // PWM processing variables
@@ -847,6 +862,13 @@ void readPwmSignals();
 void processRawChannels();
 void failsafeRcSignals();
 
+
+//
+// =======================================================================================================
+//                                  WEB SERVER
+// =======================================================================================================
+//
+
 // Create AsyncWebServer object on port 80
 AsyncWebServer server(80);
 
@@ -856,13 +878,9 @@ void notFound(AsyncWebServerRequest *request) {
 
 void setupWIFI() {
   Serial.print("WIFI initialization...");
-  // WiFi.mode(WIFI_MODE_STA);
-  // Serial.println(WiFi.macAddress());
-
   WiFi.mode(WIFI_AP_STA);
   WiFi.disconnect();
   WiFi.softAP("ZIL_131", "12345678");
-  delay(100);
   Serial.println(" done!");
   
   // Route for root / web page
@@ -881,22 +899,164 @@ void setupWIFI() {
     request->send(200, "text/plain", "hej! to ja! zil 131\n");
   });
 
-  server.on("/json", HTTP_GET, [](AsyncWebServerRequest *request){
-    Serial.println("handling endpoint '/json'");
-    
-    AsyncJsonResponse *response = new AsyncJsonResponse();
-    response->addHeader("Server","ESP Async Web Server");
-    JsonObject& root = response->getRoot();
-    root["heap"] = ESP.getFreeHeap();
-    root["ssid"] = WiFi.SSID();
-    response->setLength();
-    request->send(response);
-  });
-
   server.onNotFound(notFound);
 
   server.begin();
 }
+
+
+//
+// =======================================================================================================
+//                            POWER MANAGEMENT
+// =======================================================================================================
+//
+#include <INA.h>
+const uint32_t SERIAL_SPEED{115200};     ///< Use fast serial speed
+const uint32_t SHUNT_MICRO_OHM{100000};  ///< Shunt resistance in Micro-Ohm, e.g. 100000 is 0.1 Ohm
+const uint16_t MAXIMUM_AMPS{1};          ///< Max expected amps, clamped from 1A to a max of 1022A
+uint8_t        devicesFound{0};          ///< Number of INAs found
+// INA_Class      INA;                      ///< INA class instantiation to use EEPROM
+// INA_Class      INA(0);                 ///< INA class instantiation to use EEPROM
+INA_Class      INA(5);                 ///< INA class instantiation to use dynamic memory rather than EEPROM. Allocate storage for up to (n) devices
+
+void powerManagementSetup() {
+  Serial.print("\n\nDisplay INA Readings V1.0.8\n");
+  Serial.print(" - Searching & Initializing INA devices\n");
+  /************************************************************************************************
+  ** The INA.begin call initializes the device(s) found with an expected ±1 Amps maximum current **
+  ** and for a 0.1Ohm resistor, and since no specific device is given as the 3rd parameter all   **
+  ** devices are initially set to these values.                                                  **
+  ************************************************************************************************/
+  devicesFound = INA.begin(MAXIMUM_AMPS, SHUNT_MICRO_OHM);  // Expected max Amp & shunt resistance
+  while (devicesFound == 0) {
+    Serial.println(F("No INA device found, retrying in 10 seconds..."));
+    delay(1000);                                             // Wait 1 second before retrying
+    devicesFound = INA.begin(MAXIMUM_AMPS, SHUNT_MICRO_OHM);  // Expected max Amp & shunt resistance
+  }                                                           // while no devices detected
+  Serial.print(F(" - Detected "));
+  Serial.print(devicesFound);
+  Serial.println(F(" INA devices on the I2C bus"));
+  INA.setBusConversion(8500);             // Maximum conversion time 8.244ms
+  INA.setShuntConversion(8500);           // Maximum conversion time 8.244ms
+  INA.setAveraging(128);                  // Average each reading n-times
+  INA.setMode(INA_MODE_CONTINUOUS_BOTH);  // Bus/shunt measured continuously
+  INA.alertOnBusOverVoltage(true, 5000);  // Trigger alert if over 5V on bus
+}
+
+void powerManagementLoop() {
+  static unsigned long powerReadMillis = millis();
+
+  if (millis() - powerReadMillis >= POWER_READING_DELAY) {
+    for (uint8_t i = 0; i < devicesFound; i++) {
+      if (i < POWER_DEVICES_ON_BUS) { 
+        power_channels[i].milli_amps = INA.getBusMicroAmps(i) / 1000.0;
+        power_channels[i].milli_volts = INA.getBusMilliVolts(i) / 1000.0;
+        power_channels[i].milli_wats = INA.getBusMicroWatts(i) / 1000.0;
+      }
+
+      powerReadMillis = millis();
+    }
+  }
+
+  #ifdef DEBUG_POWER_MEASUREMENT
+  static unsigned long powerMeasuremntDebugPrintMillis = millis();
+
+  if (millis() - powerMeasuremntDebugPrintMillis >= DEBUG_POWER_PRINT_DELAY) {
+    for (uint8_t i = 0; i < POWER_DEVICES_ON_BUS; i++) {
+      Serial.print("BUS ");
+      Serial.print(i);
+      Serial.print(": ");
+      Serial.print(power_channels[i].milli_amps);
+      Serial.print("mA ");
+      Serial.print(power_channels[i].milli_volts);
+      Serial.print("mV ");
+      Serial.print(power_channels[i].milli_wats);
+      Serial.println("mW ");
+    }
+    Serial.println("=================================");
+    powerMeasuremntDebugPrintMillis = millis();
+  }
+  #endif  // DEBUG_POWER_MEASUREMENT
+
+}
+
+//
+// =======================================================================================================
+//                            ACCELEROMETER
+// =======================================================================================================
+//
+#include <MPU6050_light.h>
+MPU6050 mpu(Wire);
+
+void accelerometerSetup() {
+  Wire.begin();
+  
+  byte status = mpu.begin();
+  Serial.print(F("MPU6050 status: "));
+  Serial.println(status);
+  while(status!=0){ } // stop everything if could not connect to MPU6050
+  
+  Serial.println(F("Calculating offsets, do not move MPU6050"));
+  delay(1000);
+  mpu.calcOffsets(true,true); // gyro and accelero
+  Serial.println("Done!\n");
+}
+
+void accelerometerLoop() {
+  return;
+  // horn when acc is ready to use
+  static bool readyHorn = false;
+  if (!readyHorn) {
+    readyHorn = true;
+    hornTrigger = true;
+    delay(250);
+    hornTrigger = false;
+    delay(250);
+    hornTrigger = true;
+    delay(250);
+    hornTrigger = false;
+  }
+
+  mpu.update();
+
+  static unsigned long lastAccelerometerPrint = millis();
+
+
+  if (millis() - lastAccelerometerPrint >= 500) {
+    Serial.print(F("TEMPERATURE: "));Serial.println(mpu.getTemp());
+    Serial.print(F("ACCELERO  X: "));Serial.print(mpu.getAccX());
+    Serial.print("\tY: ");Serial.print(mpu.getAccY());
+    Serial.print("\tZ: ");Serial.println(mpu.getAccZ());
+  
+    Serial.print(F("GYRO      X: "));Serial.print(mpu.getGyroX());
+    Serial.print("\tY: ");Serial.print(mpu.getGyroY());
+    Serial.print("\tZ: ");Serial.println(mpu.getGyroZ());
+  
+    Serial.print(F("ACC ANGLE X: "));Serial.print(mpu.getAccAngleX());
+    Serial.print("\tY: ");Serial.println(mpu.getAccAngleY());
+    
+    Serial.print(F("ANGLE     X: "));Serial.print(mpu.getAngleX());
+    Serial.print("\tY: ");Serial.print(mpu.getAngleY());
+    Serial.print("\tZ: ");Serial.println(mpu.getAngleZ());
+    Serial.println(F("=====================================================\n"));
+
+    lastAccelerometerPrint = millis();
+  }
+}
+
+//
+// =======================================================================================================
+//                            GPS
+// =======================================================================================================
+//
+void gpsSetup() {
+
+}
+
+void gpsLoop() {
+
+}
+
 
 
 void setup() {
@@ -938,6 +1098,10 @@ void setup() {
   
   // Wifi setup
   setupWIFI();
+  powerManagementSetup();
+  accelerometerSetup();
+  gpsSetup();
+
 
   // PWM ----
   if (MAX_RPM_PERCENTAGE > maxPwmRpmPercentage) MAX_RPM_PERCENTAGE = maxPwmRpmPercentage; // Limit RPM range
@@ -1766,6 +1930,10 @@ void loop() {
   // Auto lights
   processReverseLight();
   processStopLight();
+
+  powerManagementLoop();
+  accelerometerLoop();
+  gpsLoop();
 
   // static unsigned long lastWifiPrint = millis();
   // if (millis() - lastWifiPrint > 1000) {
