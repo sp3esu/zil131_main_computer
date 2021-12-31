@@ -46,6 +46,9 @@ const float codeVersion = 6.63; // Software revision.
 // #define DEBUG_POWER_MEASUREMENT
 #define DEBUG_POWER_PRINT_DELAY 1000
 
+// #define DEBUG_ACCELEROMETER
+#define DEBUG_ACCELEROMETER_PRINT_DELAY 1000
+
 // TODO = Things to clean up!
 
 //
@@ -143,6 +146,9 @@ const uint8_t PWM_PINS[PWM_CHANNELS_NUM] = { 13, 12, 14, 27, 35, 34 }; // Input 
 #define POWER_READING_DELAY 250
 #define POWER_DEVICES_ON_BUS 3
 
+// Accelerometer read delay
+#define ACCELEROMETER_UPDATE_DELAY 250
+
 
 // Objects *************************************************************************************
 // Status LED objects (also used for PWM shaker motor and ESC control) -----
@@ -174,6 +180,16 @@ struct powe_data_t {
   double milli_wats;
 } power_channels[POWER_DEVICES_ON_BUS];
 
+// Accelerometer data
+struct accelerometer_data_t {
+  float angleX;
+  float angleY;
+  float angleZ;
+  float accX;
+  float accY;
+  float accZ;
+  float temp;
+} accelerometer_data;
 
 // PWM processing variables
 #define RMT_TICK_PER_US 1
@@ -889,9 +905,37 @@ void setupWIFI() {
     request->send(200, "text/plain", "OK\n");
   });
 
-  server.on("/data", HTTP_GET, [](AsyncWebServerRequest *request){
-    Serial.println("handling endpoint '/data'");
-    request->send(200, "text/plain", "data\n");
+  server.on("/status", HTTP_GET, [](AsyncWebServerRequest *request){
+    Serial.println("handling endpoint '/status'");
+
+    String json = "[{";             // json begin
+    json += "\"accelerometer\":{";  // accelerometer begin
+    json += "\"angleX\":" + String(accelerometer_data.angleX);
+    json += ",\"angleY\":" + String(accelerometer_data.angleY);
+    json += ",\"angleZ\":" + String(accelerometer_data.angleZ);
+    json += ",\"accX\":" + String(accelerometer_data.accX);
+    json += ",\"accY\":" + String(accelerometer_data.accY);
+    json += ",\"accZ\":" + String(accelerometer_data.accZ);
+    json += ",\"temp\":" + String(accelerometer_data.temp);
+    json += "}";                    // accelerometer end
+    json += ",\"power\":[";         // power begin
+    for (int8_t i=0; i < POWER_DEVICES_ON_BUS; i++) {
+      json += "{";                  // bus begin
+      json += "\"id\":" + String(i);
+      json += ",\"voltage\":" + String(power_channels[i].milli_volts);
+      json += ",\"current\":" + String(power_channels[i].milli_amps);
+      json += ",\"power\":" + String(power_channels[i].milli_wats);
+      json += "}";                  // bus end
+      if (i < POWER_DEVICES_ON_BUS - 1) {
+        json += ",";
+      }
+    }
+    json += "]";                    // power end
+    json += ",\"gps\":{";           // gps begin
+    json += "}";                    // gps end
+    json += "}]\n";                 // json end
+    request->send(200, "application/json", json);
+    json = String();
   });
 
   server.on("/test", HTTP_GET, [](AsyncWebServerRequest *request){
@@ -938,7 +982,7 @@ void powerManagementSetup() {
   Serial.println(F(" INA devices on the I2C bus"));
   INA.setBusConversion(8500);             // Maximum conversion time 8.244ms
   INA.setShuntConversion(8500);           // Maximum conversion time 8.244ms
-  INA.setAveraging(128);                  // Average each reading n-times
+  // INA.setAveraging(128);                  // Average each reading n-times
   INA.setMode(INA_MODE_CONTINUOUS_BOTH);  // Bus/shunt measured continuously
   INA.alertOnBusOverVoltage(true, 5000);  // Trigger alert if over 5V on bus
 }
@@ -994,35 +1038,31 @@ void accelerometerSetup() {
   byte status = mpu.begin();
   Serial.print(F("MPU6050 status: "));
   Serial.println(status);
-  while(status!=0){ } // stop everything if could not connect to MPU6050
-  
-  Serial.println(F("Calculating offsets, do not move MPU6050"));
-  delay(1000);
+  Serial.println(F("Calculating accelerometer offsets, do not move the model."));
   mpu.calcOffsets(true,true); // gyro and accelero
+  delay(1000);
   Serial.println("Done!\n");
 }
 
 void accelerometerLoop() {
-  return;
-  // horn when acc is ready to use
-  static bool readyHorn = false;
-  if (!readyHorn) {
-    readyHorn = true;
-    hornTrigger = true;
-    delay(250);
-    hornTrigger = false;
-    delay(250);
-    hornTrigger = true;
-    delay(250);
-    hornTrigger = false;
+  static unsigned long accelerometerUpdateMillis = millis();
+
+  if (millis() - accelerometerUpdateMillis >= ACCELEROMETER_UPDATE_DELAY) {
+    mpu.update();
+    accelerometer_data.accX = mpu.getAccX();
+    accelerometer_data.angleX = mpu.getAngleX();
+    accelerometer_data.accY = mpu.getAccY();
+    accelerometer_data.angleY = mpu.getAngleY();
+    accelerometer_data.accZ = mpu.getAccY();
+    accelerometer_data.angleZ = mpu.getAngleY();
+    accelerometer_data.temp = mpu.getTemp();
+    accelerometerUpdateMillis = millis();
   }
 
-  mpu.update();
-
+  #ifdef DEBUG_ACCELEROMETER
   static unsigned long lastAccelerometerPrint = millis();
 
-
-  if (millis() - lastAccelerometerPrint >= 500) {
+  if (millis() - lastAccelerometerPrint >= DEBUG_ACCELEROMETER_PRINT_DELAY) {
     Serial.print(F("TEMPERATURE: "));Serial.println(mpu.getTemp());
     Serial.print(F("ACCELERO  X: "));Serial.print(mpu.getAccX());
     Serial.print("\tY: ");Serial.print(mpu.getAccY());
@@ -1042,6 +1082,7 @@ void accelerometerLoop() {
 
     lastAccelerometerPrint = millis();
   }
+  #endif
 }
 
 //
