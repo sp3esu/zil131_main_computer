@@ -69,6 +69,7 @@ const float codeVersion = 6.63; // Software revision.
 
 #include "driver/rmt.h" // No need to install this, comes with ESP32 board definition (used for PWM signal detection)
 #include "driver/mcpwm.h" // for servo PWM output
+#include "soc/rtc_wdt.h"   // for watchdog timer
 
 #include <WiFi.h>
 #include <AsyncTCP.h>
@@ -157,8 +158,8 @@ statusLED escOut(false);
 // Status LED objects (also used for PWM shaker motor and ESC control) -----
 statusLED headLight(false); // "false" = output not inversed
 statusLED tailLight(false);
-// statusLED indicatorL(false);
-// statusLED indicatorR(false);
+statusLED indicatorL(false);
+statusLED indicatorR(false);
 // statusLED fogLight(false);
 statusLED reversingLight(false);
 statusLED roofLight(false);
@@ -172,9 +173,10 @@ statusLED roofLight(false);
 
 // Global variables **********************************************************************
 SemaphoreHandle_t xPwmSemaphore;
+SemaphoreHandle_t xRpmSemaphore;
 
 // Power Measurement Data
-struct powe_data_t {
+struct power_data_t {
   double milli_volts;
   double milli_amps;
   double milli_wats;
@@ -190,6 +192,18 @@ struct accelerometer_data_t {
   float accZ;
   float temp;
 } accelerometer_data;
+
+// Lights status
+bool headLightsOn = false;
+bool roofLightsOn = false;
+
+bool lowBeamLightOn = false;
+bool highBeamLightOn = false;
+
+bool braking = false;
+#define TAIL_LIGHT_BRIGHTNES 30
+#define STOP_LIGHT_BRIGHTNES 80
+
 
 // PWM processing variables
 #define RMT_TICK_PER_US 1
@@ -819,27 +833,49 @@ static void IRAM_ATTR rmt_isr_handler(void* arg) {
 
   uint32_t intr_st = RMT.int_st.val;
 
-  uint8_t i;
-  for (i = 0; i < PWM_CHANNELS_NUM; i++) {
-    uint8_t channel = PWM_CHANNELS[i];
-    uint32_t channel_mask = BIT(channel * 3 + 1);
+  static uint32_t lastFrameTime = millis();
 
-    if (!(intr_st & channel_mask)) continue;
+  if (millis() - lastFrameTime > 20) { // Only do it every 20ms (very important for system stability)
 
-    RMT.conf_ch[channel].conf1.rx_en = 0;
-    RMT.conf_ch[channel].conf1.mem_owner = RMT_MEM_OWNER_TX;
-    volatile rmt_item32_t* item = RMTMEM.chan[channel].data32;
-    if (item) {
-      pulseWidthRaw[i + 1] = item->duration0;
-    }
+    // See if we can obtain or "Take" the Semaphore.
+    // If the semaphore is not available, wait 1 ticks of the Scheduler to see if it becomes free.
+    // if ( xSemaphoreTake( xPwmSemaphore, portMAX_DELAY ) )
+    // {
+      // We were able to obtain or "Take" the semaphore and can now access the shared resource.
+      // We want to have the pwmBuf variable for us alone,
+      // so we don't want it getting stolen during the middle of a conversion.
 
-    RMT.conf_ch[channel].conf1.mem_wr_rst = 1;
-    RMT.conf_ch[channel].conf1.mem_owner = RMT_MEM_OWNER_RX;
-    RMT.conf_ch[channel].conf1.rx_en = 1;
 
-    //clear RMT interrupt status.
-    RMT.int_clr.val = channel_mask;
+      uint8_t i;
+      for (i = 0; i < PWM_CHANNELS_NUM; i++) {
+        uint8_t channel = PWM_CHANNELS[i];
+        uint32_t channel_mask = BIT(channel * 3 + 1);
+
+        if (!(intr_st & channel_mask)) continue;
+
+        RMT.conf_ch[channel].conf1.rx_en = 0;
+        RMT.conf_ch[channel].conf1.mem_owner = RMT_MEM_OWNER_TX;
+        volatile rmt_item32_t* item = RMTMEM.chan[channel].data32;
+        if (item) {
+          pulseWidthRaw[i + 1] = item->duration0;
+        }
+
+        RMT.conf_ch[channel].conf1.mem_wr_rst = 1;
+        RMT.conf_ch[channel].conf1.mem_owner = RMT_MEM_OWNER_RX;
+        RMT.conf_ch[channel].conf1.rx_en = 1;
+
+        //clear RMT interrupt status.
+        RMT.int_clr.val = channel_mask;
+      }
+      
+      // xSemaphoreGive( xPwmSemaphore ); // Now free or "Give" the semaphore for others.
+    // }
+
+    lastFrameTime = millis();
   }
+  // else {
+  //   xSemaphoreGive( xPwmSemaphore ); // Free or "Give" the semaphore for others, if not required!
+  // }
 }
 
 // =======================================================================================================
@@ -906,9 +942,9 @@ void setupWIFI() {
   });
 
   server.on("/status", HTTP_GET, [](AsyncWebServerRequest *request){
-    Serial.println("handling endpoint '/status'");
+    // Serial.println("handling endpoint '/status'");
 
-    String json = "[{";             // json begin
+    String json = "{";             // json begin
     json += "\"accelerometer\":{";  // accelerometer begin
     json += "\"angleX\":" + String(accelerometer_data.angleX);
     json += ",\"angleY\":" + String(accelerometer_data.angleY);
@@ -933,7 +969,11 @@ void setupWIFI() {
     json += "]";                    // power end
     json += ",\"gps\":{";           // gps begin
     json += "}";                    // gps end
-    json += "}]\n";                 // json end
+    json += ",\"lowBeam\":" + String(lowBeamLightOn?"true":"false");
+    json += ",\"highBeam\":" + String(highBeamLightOn?"true":"false");
+    json += ",\"engineRunning\":" + String(engineRunning?"true":"false");
+    json += ",\"braking\":" + String(braking?"true":"false");
+    json += "}\n";                 // json end
     request->send(200, "application/json", json);
     json = String();
   });
@@ -1103,7 +1143,19 @@ void gpsLoop() {
 void setup() {
   // Watchdog timers need to be disabled, if task 1 is running without delay(1)
   disableCore0WDT();
-  disableCore1WDT();
+  // disableCore1WDT();
+
+  // Setup RTC (Real Time Clock) watchdog
+  rtc_wdt_protect_off();         // Disable RTC WDT write protection
+  rtc_wdt_set_length_of_reset_signal(RTC_WDT_SYS_RESET_SIG, RTC_WDT_LENGTH_3_2us);
+  rtc_wdt_set_stage(RTC_WDT_STAGE0, RTC_WDT_STAGE_ACTION_RESET_SYSTEM);
+  rtc_wdt_set_time(RTC_WDT_STAGE0, 10000); // set 10s timeout
+  rtc_wdt_enable();           // Start the RTC WDT timer
+  //rtc_wdt_disable();            // Disable the RTC WDT timer
+  rtc_wdt_protect_on();         // Enable RTC WDT write protection
+
+  // Serial setup
+  Serial.begin(115200); // USB serial (for DEBUG)
 
   // Semaphores are useful to stop a Task proceeding, where it should be paused to wait,
   // because it is sharing a resource, such as the PWM variable.
@@ -1111,8 +1163,25 @@ void setup() {
   if ( xPwmSemaphore == NULL )  // Check to confirm that the PWM Semaphore has not already been created.
   {
     xPwmSemaphore = xSemaphoreCreateMutex();  // Create a mutex semaphore we will use to manage variable access
-    if ( ( xPwmSemaphore ) != NULL )
+    if ( ( xPwmSemaphore ) != NULL ) {
       xSemaphoreGive( ( xPwmSemaphore ) );  // Make the PWM variable available for use, by "Giving" the Semaphore.
+    } else {
+      Serial.println("Semaphore for PWM not created....");
+      delay(1000);
+      ESP.restart();
+    }
+  }
+  
+  if ( xRpmSemaphore == NULL )  // Check to confirm that the RPM Semaphore has not already been created.
+  {
+    xRpmSemaphore = xSemaphoreCreateMutex();  // Create a mutex semaphore we will use to manage variable access
+    if ( ( xRpmSemaphore ) != NULL ) {
+      xSemaphoreGive( ( xRpmSemaphore ) );  // Make the RPM variable available for use, by "Giving" the Semaphore.
+    } else {
+      Serial.println("Semaphore for RPM not created....");
+      delay(1000);
+      ESP.restart();
+    }
   }
 
   // Set pin modes
@@ -1126,16 +1195,15 @@ void setup() {
   // LED & shaker motor setup (note, that we only have timers from 0 - 15)
   headLight.begin(HEADLIGHT_PIN, 1, 20000); // Timer 1, 20kHz
   tailLight.begin(TAILLIGHT_PIN, 2, 20000); // Timer 2, 20kHz
-  // indicatorL.begin(INDICATOR_LEFT_PIN, 3, 20000); // Timer 3, 20kHz
-  // indicatorR.begin(INDICATOR_RIGHT_PIN, 4, 20000); // Timer 4, 20kHz
+  indicatorL.begin(INDICATOR_LEFT_PIN, 3, 20000); // Timer 3, 20kHz
+  indicatorR.begin(INDICATOR_RIGHT_PIN, 4, 20000); // Timer 4, 20kHz
   // fogLight.begin(FOGLIGHT_PIN, 5, 20000); // Timer 5, 20kHz
   reversingLight.begin(REVERSING_LIGHT_PIN, 6, 20000); // Timer 6, 20kHz
   roofLight.begin(ROOFLIGHT_PIN, 7, 20000); // Timer 7, 20kHz
 
   escOut.begin(ESC_OUT_PIN, 15, 50, 16); // Timer 15, 50Hz, 16bit <-- ESC running @ 50Hz
 
-  // Serial setup
-  Serial.begin(115200); // USB serial (for DEBUG)
+
   
   // Wifi setup
   setupWIFI();
@@ -1844,9 +1912,6 @@ unsigned long loopDuration() {
   return loopTime;
 }
 
-bool headLightsOn = false;
-bool roofLightsOn = false;
-
 void checkButtons() {
   // CH 5 - engine on/off, horn
   if (pulseWidth[5] < 1200) {
@@ -1854,16 +1919,31 @@ void checkButtons() {
     engineOn = false;
     hornTrigger = false;
     hornLatch = false;
+
+    //XMASS Mode
+    indicatorL.off();
+    indicatorR.off();
   } else if (pulseWidth[5] > 1200 && pulseWidth[5] <= 1700) {
     // Engine on
     engineOn = true;
     hornTrigger = false;
     hornLatch = false;
+
+    //XMASS Mode
+    indicatorL.off();
+    indicatorR.off();
+
   } else if (pulseWidth[5] > 1700) {
     // horn
     engineOn = true;
-    hornTrigger = true;
-    hornLatch = true;
+    // hornTrigger = true;
+    // hornLatch = true;
+
+    // XMASS Mode
+    hornTrigger = false;
+    hornLatch = false;
+    indicatorL.pwm(80);
+    indicatorR.pwm(80);
   }
 
   // CH 6 - lights
@@ -1874,22 +1954,35 @@ void checkButtons() {
     headLightsOn = false;
     roofLightsOn = false;
 
+    lowBeamLightOn = false;
+    highBeamLightOn = false;
+
   } else if (pulseWidth[6] > 1200 && pulseWidth[6] <= 1500) {
     headLight.pwm(80);
     roofLight.off();
     headLightsOn = true;
     roofLightsOn = false;
+
+    lowBeamLightOn = true;
+    highBeamLightOn = false;
+
   } else if (pulseWidth[6] > 1500 && pulseWidth[6] <= 1700) {
     headLight.on();
     roofLight.off();
     headLightsOn = true;
     roofLightsOn = false;
+
+    lowBeamLightOn = true;
+    highBeamLightOn = true;
   }
   else if (pulseWidth[6] > 1700) {
     headLight.on();
     roofLight.on();
     headLightsOn = true;
     roofLightsOn = true;
+
+    lowBeamLightOn = true;
+    highBeamLightOn = true;
   }
 }
 
@@ -1902,10 +1995,6 @@ void processReverseLight() {
     reversingLight.off();
   }
 }
-
-bool braking = false;
-#define TAIL_LIGHT_BRIGHTNES 30
-#define STOP_LIGHT_BRIGHTNES 80
 
 void processStopLight() {
   static unsigned long lastStopLightMilis = millis();
@@ -1963,7 +2052,12 @@ void loop() {
   readPwmSignals();
 
   // Map pulsewidth to throttle
-  mapThrottle();
+  if ( xSemaphoreTake( xRpmSemaphore, portMAX_DELAY ) ) {
+    mapThrottle();
+    
+    xSemaphoreGive( xRpmSemaphore ); // Now free or "Give" the semaphore for others.
+  }
+
 
   // Check buttons actions
   checkButtons();
@@ -1982,6 +2076,9 @@ void loop() {
   //   Serial.println(WiFi.gatewayIP());
   //   lastWifiPrint = millis();
   // }
+
+  // Feeding the RTC watchtog timer is essential!
+  rtc_wdt_feed();
 }
 
 //
@@ -1999,11 +2096,15 @@ void Task1code(void *pvParameters) {
     // Simulate engine mass, generate RPM signal
     engineMassSimulation();
 
-    // Call gear selector
-    if (automatic || doubleClutch) automaticGearSelector();
-
-    newEngineSimulation();
-
+    if ( xSemaphoreTake( xRpmSemaphore, portMAX_DELAY ) ) {
+      newEngineSimulation();
+      
+      // Call gear selector
+      if (automatic || doubleClutch) automaticGearSelector();
+      
+      xSemaphoreGive( xRpmSemaphore ); // Now free or "Give" the semaphore for others.
+    }
+  
     // measure loop time
     //loopTime = loopDuration(); // for debug only
   }
