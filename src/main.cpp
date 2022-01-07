@@ -148,7 +148,7 @@ const uint8_t PWM_PINS[PWM_CHANNELS_NUM] = { 13, 12, 14, 27, 35, 34 }; // Input 
 #define POWER_DEVICES_ON_BUS 3
 
 // Accelerometer read delay
-#define ACCELEROMETER_UPDATE_DELAY 250
+#define ACCELEROMETER_UPDATE_DELAY 50
 
 
 // Objects *************************************************************************************
@@ -1075,7 +1075,7 @@ MPU6050 mpu(Wire);
 void accelerometerSetup() {
   Wire.begin();
   
-  byte status = mpu.begin();
+  byte status = mpu.begin(3,3);
   Serial.print(F("MPU6050 status: "));
   Serial.println(status);
   Serial.println(F("Calculating accelerometer offsets, do not move the model."));
